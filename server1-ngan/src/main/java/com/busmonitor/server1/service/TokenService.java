@@ -12,6 +12,7 @@ import org.springframework.web.client.RestTemplate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class TokenService {
@@ -20,214 +21,264 @@ public class TokenService {
     private RoundLogRepository roundLogRepository;
 
     private final RestTemplate restTemplate = new RestTemplate();
+    private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("HH:mm:ss");
 
-    @Value("${server2.url}")
-    private String server2Url;
+    @Value("${station.id}")
+    private String myId;
 
-    @Value("${server3.url}")
-    private String server3Url;
+    @Value("${station.order}")
+    private int myOrder;
 
-    @Value("${server4.url}")
-    private String server4Url;
+    @Value("${station.name}")
+    private String myName;
 
-    @Value("${server5.url}")
-    private String server5Url;
+    @Value("${server1.url:https://server1-ngan.onrender.com}")
+    private String url1;
+    @Value("${server2.url:https://server2-nhi.onrender.com}")
+    private String url2;
+    @Value("${server3.url:https://server3-my.onrender.com}")
+    private String url3;
+    @Value("${server4.url:https://server4-suong.onrender.com}")
+    private String url4;
+    @Value("${server5.url:https://server5-hang.onrender.com}")
+    private String url5;
 
-    // Trang thai he thong
+    private final Map<String, String> allUrls = new LinkedHashMap<>();
+    private final Map<String, Integer> allOrders = new LinkedHashMap<>();
+    private final Map<String, Boolean> serverStatus = new ConcurrentHashMap<>();
+
     private BusToken currentToken = new BusToken();
     private boolean isRunning = false;
     private boolean tokenInTransit = false;
+    private boolean isLeader = false;
+    private String currentLeaderId = "server1-ngan";
+    private boolean initialized = false;
 
-    // Trang thai tung server (ten -> true/false)
-    private final Map<String, Boolean> serverStatus = new LinkedHashMap<>();
-    private final Map<String, String> serverUrls = new LinkedHashMap<>();
+    private final List<String> logs = Collections.synchronizedList(new ArrayList<>());
 
-    // Log he thong
-    private final List<String> systemLogs = new ArrayList<>();
-    private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("HH:mm:ss");
+    private void ensureInit() {
+        if (initialized) return;
+        initialized = true;
+        allUrls.put("server1-ngan", url1);
+        allUrls.put("server2-nhi",  url2);
+        allUrls.put("server3-my",   url3);
+        allUrls.put("server4-suong",url4);
+        allUrls.put("server5-hang", url5);
+        allOrders.put("server1-ngan", 1);
+        allOrders.put("server2-nhi",  2);
+        allOrders.put("server3-my",   3);
+        allOrders.put("server4-suong",4);
+        allOrders.put("server5-hang", 5);
+        serverStatus.put(myId, true);
+        allUrls.forEach((id, url) -> {
+            if (!id.equals(myId)) serverStatus.putIfAbsent(id, false);
+        });
+    }
 
-    // ==================== KHOI DONG / DUNG ====================
+    // ===== PING & LEADER ELECTION moi 10 giay =====
+    @Scheduled(fixedDelay = 10000)
+    public void pingAndElect() {
+        ensureInit();
+        allUrls.forEach((id, url) -> {
+            if (id.equals(myId)) return;
+            boolean wasAlive = serverStatus.getOrDefault(id, false);
+            boolean alive = ping(url);
+            serverStatus.put(id, alive);
+            if (!wasAlive && alive)  log("✅ " + id + " hoi phuc! Them lai vao vong.");
+            if (wasAlive  && !alive) log("❌ " + id + " mat ket noi! Loai khoi vong.");
+        });
+        electLeader();
+    }
 
+    private void electLeader() {
+        String bestLeader = myId;
+        int bestOrder = myOrder;
+        for (Map.Entry<String, Boolean> e : serverStatus.entrySet()) {
+            if (e.getValue() && !e.getKey().equals(myId)) {
+                int ord = allOrders.getOrDefault(e.getKey(), 99);
+                if (ord < bestOrder) { bestOrder = ord; bestLeader = e.getKey(); }
+            }
+        }
+        boolean wasLeader = isLeader;
+        isLeader = bestLeader.equals(myId);
+        currentLeaderId = bestLeader;
+
+        if (!wasLeader && isLeader) {
+            log("👑 " + myId + " duoc bau lam LEADER! Server truoc bi mat.");
+            if (!isRunning) {
+                isRunning = true;
+                tokenInTransit = false;
+                new Thread(() -> {
+                    try { Thread.sleep(2000); processAtMyStation(); }
+                    catch (InterruptedException ex) { Thread.currentThread().interrupt(); }
+                }).start();
+            }
+        } else if (wasLeader && !isLeader) {
+            log("📤 Nhuong quyen leader cho " + bestLeader);
+            isRunning = false;
+        }
+    }
+
+    private boolean ping(String url) {
+        try { restTemplate.getForObject(url + "/api/health", Map.class); return true; }
+        catch (Exception e) { return false; }
+    }
+
+    // ===== START / STOP =====
     public String startSystem() {
-        if (isRunning) return "He thong dang chay roi!";
-
-        initServerMap();
+        ensureInit();
+        pingAndElect();
         isRunning = true;
-        tokenInTransit = false;
-        currentToken = new BusToken();
-
-        log("✅ He thong khoi dong tai Server 1 (Ngan) - Tram dieu phoi trung tam");
-        log("🔄 Bat dau kiem tra trang thai cac server...");
-
-        checkAllServers();
-        buildActiveList();
-
-        log("📋 Danh sach server hoat dong: " + currentToken.getActiveServers());
-
-        // Chay vong dau tien
-        new Thread(this::startFirstRound).start();
-
-        return "He thong da khoi dong!";
+        log("✅ He thong khoi dong! Leader: " + currentLeaderId + " | Toi la: " + myId);
+        if (isLeader) {
+            currentToken = new BusToken();
+            new Thread(() -> {
+                try { Thread.sleep(1000); processAtMyStation(); }
+                catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+            }).start();
+        }
+        return "Khoi dong! Leader: " + currentLeaderId;
     }
 
     public String stopSystem() {
-        isRunning = false;
-        tokenInTransit = false;
-        log("🛑 He thong da dung boi nguoi dung");
-        return "He thong da dung!";
+        isRunning = false; tokenInTransit = false;
+        log("🛑 He thong dung");
+        return "Da dung!";
     }
 
-    private void initServerMap() {
-        serverUrls.clear();
-        serverUrls.put("server2-nhi", server2Url);
-        serverUrls.put("server3-my", server3Url);
-        serverUrls.put("server4-suong", server4Url);
-        serverUrls.put("server5-hang", server5Url);
+    // ===== XU LY TOKEN =====
+    public void processAtMyStation() {
+        if (!isRunning || !isLeader || tokenInTransit) return;
 
-        serverStatus.clear();
-        serverUrls.forEach((name, url) -> serverStatus.put(name, false));
-    }
-
-    // ==================== KIEM TRA SERVER ====================
-
-    // Tu dong kiem tra suc khoe moi 15 giay
-    @Scheduled(fixedDelay = 15000)
-    public void checkAllServers() {
-        serverUrls.forEach((name, url) -> {
-            boolean wasUp = serverStatus.getOrDefault(name, false);
-            boolean isUp = pingServer(url);
-
-            serverStatus.put(name, isUp);
-
-            if (!wasUp && isUp) {
-                log("✅ Server " + name + " da hoi phuc! Them lai vao vong tron.");
-            } else if (wasUp && !isUp) {
-                log("❌ Server " + name + " khong phan hoi! Loai khoi vong tron tam thoi.");
-            }
-        });
-
-        buildActiveList();
-    }
-
-    private boolean pingServer(String url) {
-        try {
-            restTemplate.getForObject(url + "/api/health", Map.class);
-            return true;
-        } catch (Exception e) {
-            return false;
-        }
-    }
-
-    private void buildActiveList() {
-        List<String> active = new ArrayList<>();
-        serverUrls.forEach((name, url) -> {
-            if (serverStatus.getOrDefault(name, false)) {
-                active.add(name);
-            }
-        });
-        currentToken.setActiveServers(active);
-    }
-
-    // ==================== XU LY TOKEN ====================
-
-    private void startFirstRound() {
-        try {
-            Thread.sleep(2000);
-            if (isRunning) processAtStation1();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-    }
-
-    public void processAtStation1() {
-        if (!isRunning || tokenInTransit) return;
-
-        // Xu ly hanh khach tai Tram 1
         int boarded = new Random().nextInt(10) + 1;
         int alighted = Math.min(currentToken.getCurrentPassengers(), new Random().nextInt(5));
         currentToken.setCurrentPassengers(currentToken.getCurrentPassengers() + boarded - alighted);
         double revenue = boarded * 8000.0;
         currentToken.setTotalRevenue(currentToken.getTotalRevenue() + revenue);
-        currentToken.setLastStation("server1-ngan");
+        currentToken.setLastStation(myId);
+        currentToken.setCurrentLeader(myId);
 
-        // Luu vao DB cua Server 1
-        RoundLog rl = new RoundLog(currentToken.getTotalRounds() + 1, boarded, alighted, revenue, "Tram 1 - Ngan");
+        RoundLog rl = new RoundLog(currentToken.getTotalRounds() + 1, boarded, alighted, revenue, myName);
         roundLogRepository.save(rl);
+        log(String.format("🚉 %s (LEADER): +%d len, -%d xuong | %d nguoi | %.0f VND",
+                myName, boarded, alighted, currentToken.getCurrentPassengers(), revenue));
 
-        log(String.format("🚉 TRAM 1 (Ngan): +%d len, -%d xuong | Tren xe: %d nguoi | Thu: %.0f VND",
-                boarded, alighted, currentToken.getCurrentPassengers(), revenue));
-
-        // Cap nhat danh sach server active truoc khi gui
-        checkAllServers();
-
-        // Gui token sang server tiep theo
+        buildActiveList();
         tokenInTransit = true;
         forwardToken();
+    }
+
+    // Nhan token tu server truoc (transit)
+    public void receiveToken(BusToken incoming) {
+        ensureInit();
+        // Update local state
+        this.currentToken = incoming;
+
+        int boarded = new Random().nextInt(8) + 1;
+        int alighted = Math.min(currentToken.getCurrentPassengers(), new Random().nextInt(5));
+        currentToken.setCurrentPassengers(currentToken.getCurrentPassengers() + boarded - alighted);
+        double revenue = boarded * 8000.0;
+        currentToken.setTotalRevenue(currentToken.getTotalRevenue() + revenue);
+        currentToken.setLastStation(myId);
+
+        RoundLog rl = new RoundLog(currentToken.getTotalRounds() + 1, boarded, alighted, revenue, myName);
+        roundLogRepository.save(rl);
+        log(String.format("🚉 %s: +%d len, -%d xuong | %d nguoi | %.0f VND",
+                myName, boarded, alighted, currentToken.getCurrentPassengers(), revenue));
+
+        // Forward to next in list
+        forwardToken();
+    }
+
+    // Nhan token quay lai (tu server cuoi cung)
+    public void receiveTokenBack(BusToken token) {
+        this.currentToken = token;
+        this.currentToken.setTotalRounds(token.getTotalRounds() + 1);
+        this.tokenInTransit = false;
+        this.currentToken.setCurrentLeader(myId);
+
+        log("🏁 Vong #" + currentToken.getTotalRounds() + " hoan thanh! Tong: "
+                + String.format("%.0f", currentToken.getTotalRevenue()) + " VND");
+
+        if (isRunning && isLeader) {
+            try { Thread.sleep(3000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+            processAtMyStation();
+        }
+    }
+
+    private void buildActiveList() {
+        List<String> active = new ArrayList<>();
+        // Add servers in order, skip myself (leader), skip dead ones
+        allUrls.forEach((id, url) -> {
+            if (!id.equals(myId) && serverStatus.getOrDefault(id, false)) {
+                active.add(id);
+            }
+        });
+        currentToken.setActiveServers(active);
     }
 
     private void forwardToken() {
         List<String> active = new ArrayList<>(currentToken.getActiveServers());
 
-        if (active.isEmpty()) {
-            // Khong co server nao - token quay lai ngay Server 1
-            log("⚠️ Khong co server trung gian nao online! Token quay thang ve Server 1.");
-            receiveTokenBack(currentToken);
+        // Find my position and get next server
+        String myPos = currentToken.getLastStation();
+        int myIdx = active.indexOf(myPos);
+
+        String next = null;
+        if (myIdx == -1) {
+            // I'm leader, send to first in active list
+            if (!active.isEmpty()) next = active.get(0);
+        } else if (myIdx < active.size() - 1) {
+            next = active.get(myIdx + 1);
+        }
+        // else: last in list -> return to leader
+
+        if (next == null) {
+            // No more servers or last -> return to leader
+            String leaderUrl = allUrls.get(currentLeaderId);
+            try {
+                log("📤 Tra token ve leader: " + currentLeaderId);
+                restTemplate.postForObject(leaderUrl + "/api/receive-token-back", currentToken, String.class);
+            } catch (Exception e) {
+                log("❌ Khong the tra token ve leader: " + e.getMessage());
+                // Leader is dead, will be re-elected in next ping cycle
+            }
             return;
         }
 
-        // Gui den server dau tien trong danh sach active
-        String nextServer = active.get(0);
-        String nextUrl = serverUrls.get(nextServer);
-
+        String nextUrl = allUrls.get(next);
         try {
-            log("📤 Gui token den " + nextServer + " (" + nextUrl + ")");
+            log("📤 Gui token den " + next);
             restTemplate.postForObject(nextUrl + "/api/receive-token", currentToken, String.class);
         } catch (Exception e) {
-            log("❌ Loi gui den " + nextServer + ": " + e.getMessage());
-            // Danh dau server nay chet, thu server tiep theo
-            serverStatus.put(nextServer, false);
-            active.remove(0);
+            log("❌ Gui that bai den " + next + " -> bo qua");
+            serverStatus.put(next, false);
+            active.remove(next);
             currentToken.setActiveServers(active);
-            forwardToken(); // Thu lai voi danh sach moi
+            currentToken.setLastStation(myPos); // keep my position
+            forwardToken(); // try next
         }
     }
 
-    // ==================== NHAN TOKEN TRA VE ====================
-
-    public void receiveTokenBack(BusToken token) {
-        this.currentToken = token;
-        this.currentToken.setTotalRounds(token.getTotalRounds() + 1);
-        this.tokenInTransit = false;
-
-        log("🏁 Token quay ve Server 1! Hoan thanh vong #" + currentToken.getTotalRounds()
-                + " | Tong doanh thu: " + String.format("%.0f", currentToken.getTotalRevenue()) + " VND");
-
-        // Tiep tuc neu he thong dang chay
-        if (isRunning) {
-            try {
-                Thread.sleep(3000); // Nghi 3 giay giua cac vong
-                processAtStation1();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        }
-    }
-
-    // ==================== LOG ====================
-
-    private void log(String message) {
-        String entry = "[" + LocalDateTime.now().format(FMT) + "] " + message;
-        systemLogs.add(entry);
-        System.out.println(entry);
-        if (systemLogs.size() > 200) systemLogs.remove(0);
-    }
-
-    // ==================== GETTERS ====================
-
+    // ===== GETTERS =====
     public BusToken getCurrentToken() { return currentToken; }
     public boolean isRunning() { return isRunning; }
+    public boolean isLeader() { return isLeader; }
+    public String getCurrentLeaderId() { return currentLeaderId; }
     public boolean isTokenInTransit() { return tokenInTransit; }
-    public List<String> getSystemLogs() { return new ArrayList<>(systemLogs); }
-    public Map<String, Boolean> getServerStatus() { return new LinkedHashMap<>(serverStatus); }
+    public String getMyId() { ensureInit(); return myId; }
+    public Map<String, Boolean> getServerStatus() {
+        ensureInit();
+        Map<String, Boolean> s = new LinkedHashMap<>(serverStatus);
+        s.put(myId, true);
+        return s;
+    }
+    public List<String> getLogs() { return new ArrayList<>(logs); }
     public List<RoundLog> getRecentLogs() { return roundLogRepository.findTop10ByOrderByTimestampDesc(); }
+
+    private void log(String msg) {
+        String e = "[" + LocalDateTime.now().format(FMT) + "] " + msg;
+        logs.add(e); System.out.println(e);
+        if (logs.size() > 200) logs.remove(0);
+    }
 }

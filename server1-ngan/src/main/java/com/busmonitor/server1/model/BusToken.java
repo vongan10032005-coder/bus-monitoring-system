@@ -9,13 +9,12 @@ public class BusToken {
     private double totalRevenue;
     private List<String> activeServers;
     private String lastStation;
+    private String currentLeader;
+    private long timestamp;
 
     public BusToken() {
-        this.currentPassengers = 0;
-        this.totalRounds = 0;
-        this.totalRevenue = 0.0;
         this.activeServers = new ArrayList<>();
-        this.lastStation = "server1-ngan";
+        this.timestamp = System.currentTimeMillis();
     }
 
     public int getCurrentPassengers() { return currentPassengers; }
@@ -28,4 +27,8 @@ public class BusToken {
     public void setActiveServers(List<String> s) { this.activeServers = s; }
     public String getLastStation() { return lastStation; }
     public void setLastStation(String s) { this.lastStation = s; }
+    public String getCurrentLeader() { return currentLeader; }
+    public void setCurrentLeader(String l) { this.currentLeader = l; }
+    public long getTimestamp() { return timestamp; }
+    public void setTimestamp(long t) { this.timestamp = t; }
 }
