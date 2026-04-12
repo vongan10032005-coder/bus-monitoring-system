@@ -1,0 +1,72 @@
+# ========================
+# JAVA / MAVEN
+# ========================
+target/
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+*.zip
+*.tar.gz
+*.rar
+
+# Maven wrapper
+.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+# ========================
+# SPRING BOOT
+# ========================
+*.log
+spring-shell.log
+
+# ========================
+# IDE - IntelliJ IDEA
+# ========================
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+
+# IDE - VSCode
+.vscode/
+*.code-workspace
+
+# IDE - Eclipse
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+bin/
+
+# IDE - NetBeans
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+# ========================
+# OS
+# ========================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ========================
+# ENV / SECRET
+# ========================
+.env
+.env.local
+*.env
+
+# ========================
+# DOCKER
+# ========================
+.dockerignore
