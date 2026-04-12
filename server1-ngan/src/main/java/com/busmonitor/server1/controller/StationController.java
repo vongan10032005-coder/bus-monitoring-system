@@ -162,7 +162,7 @@ public class StationController {
             + "function clk(){const n=new Date();document.getElementById('clk').textContent=[n.getHours(),n.getMinutes(),n.getSeconds()].map(x=>x.toString().padStart(2,'0')).join(':');}"
             + "setInterval(clk,1000);clk();"
             + "function fmt(n){return Number(n||0).toLocaleString('vi-VN');}"
-            + "function lcls(l){if(l.includes('\\u2705')||l.includes('hoan thanh')||l.includes('thanh cong'))return 'ok';if(l.includes('\\u274c')||l.includes('LOI')||l.includes('CANH BAO'))return 'er';if(l.includes('\\ud83d\\udce4')||l.includes('Token')||l.includes('TRAM'))return 'in';if(l.includes('\\u26a0')||l.includes('INACTIVE'))return 'wn';return 'dm';}"
+            + "function lcls(l){if(l.includes('hoan thanh')||l.includes('thanh cong')||l.includes('hoi phuc'))return 'ok';if(l.includes('LOI')||l.includes('CANH BAO')||l.includes('khong the'))return 'er';if(l.includes('Token')||l.includes('TRAM')||l.includes('Gui token'))return 'in';if(l.includes('INACTIVE')||l.includes('khong phan hoi'))return 'wn';return 'dm';}"
             + "async function refresh(){try{"
             + "const d=await fetch('/api/status').then(r=>r.json());"
             + "const ss=d.serverStatus||{};const tk=d.currentToken||{};const run=d.isRunning;"
@@ -176,7 +176,7 @@ public class StationController {
             + "const ac=Object.values(ss).filter(Boolean).length+1;"
             + "document.getElementById('s-act').textContent=ac+'/5 tram';"
             + "const tp=document.getElementById('tpath');"
-            + "tp.innerHTML=ST.map((s,i)=>{const isAct=s.id==='server1-ngan'||(tk.activeServers||[]).includes(s.id);const isCur=s.id===tk.lastStation;const cls=isCur?'cur':(isAct?'':'dead');return '<span class=\"tst '+cls+'\">'+s.name+'</span>'+(i<ST.length-1?'<span class=\"sep\">\\u2192</span>':'<span class=\"sep\">\\u21a9</span>');}).join('');"
+            + "tp.innerHTML=ST.map((s,i)=>{const isAct=s.id==='server1-ngan'||(tk.activeServers||[]).includes(s.id);const isCur=s.id===tk.lastStation;const cls=isCur?'cur':(isAct?'':'dead');return '<span class=\"tst '+cls+'\">'+s.name+'</span>'+(i<ST.length-1?'<span class=\"sep\">-&gt;</span>':'<span class=\"sep\">&lt;-</span>');}).join('');"
             + "ST.forEach(s=>{const g=document.getElementById(s.nid);if(!g)return;const c=g.querySelector('circle');const ok=s.id==='server1-ngan'||ss[s.id]===true;c.setAttribute('stroke',ok?'#00ff88':'#ff3d5a');c.setAttribute('stroke-width',ok?'2':'1.5');g.style.opacity=ok?'1':'0.35';});"
             + "const cur=ST.find(s=>s.id===tk.lastStation)||ST[0];const td=document.getElementById('tdot');td.setAttribute('cx',cur.cx);td.setAttribute('cy',cur.cy);"
             + "const sl=document.getElementById('srvlist');sl.innerHTML=ST.map((s,i)=>{const ok=s.id==='server1-ngan'||ss[s.id]===true;return '<div class=\"srv-row '+(ok?'ok':'err')+'\"><span class=\"srv-name\">'+s.name+' (server-'+(i+1)+')</span><span class=\"badges\">'+(s.id==='server1-ngan'?'<span class=\"badge st\">Starter</span>':'')+'<span class=\"badge '+(ok?'ok':'err')+'\">'+(ok?'ACTIVE':'LOI')+'</span><span class=\"badge db\">DB rieng</span></span></div>';}).join('');"
@@ -184,6 +184,6 @@ public class StationController {
             + "const hist=d.recentDBLogs||[];document.getElementById('hbody').innerHTML=hist.length===0?'<tr><td colspan=\"5\" style=\"color:var(--dim);text-align:center\">Chua co du lieu</td></tr>':hist.map(h=>'<tr><td class=\"c\">'+h.roundNumber+'</td><td style=\"font-size:.75rem\">'+(h.stationName||'--')+'</td><td class=\"g\">+'+h.passengersBoarded+'</td><td class=\"r\">-'+h.passengersAlighted+'</td><td class=\"y\">'+fmt(h.revenue)+'d</td></tr>').join('');"
             + "}catch(e){document.getElementById('mtxt').textContent='Mat ket noi...';}"
             + "}refresh();setInterval(refresh,2000);"
-            + "<\/script></body></html>";
+            + "</script></body></html>";
     }
 }
