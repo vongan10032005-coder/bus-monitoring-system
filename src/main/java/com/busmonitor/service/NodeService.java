@@ -291,9 +291,15 @@ public class NodeService {
     public Map<String, Boolean> getServerStatus() {
         ensureInit();
         Map<String, Boolean> result = new LinkedHashMap<>();
-        allUrls.forEach((id, url) ->
-            result.put(id, id.equals(myId) ? true : peerStatus.getOrDefault(id, false))
-        );
+        allUrls.forEach((id, url) -> {
+            if (id.equals(myId)) {
+                result.put(id, true); // I am always alive
+            } else {
+                // Only TRUE if explicitly confirmed alive by ping
+                boolean alive = Boolean.TRUE.equals(peerStatus.get(id));
+                result.put(id, alive);
+            }
+        });
         return result;
     }
 
