@@ -188,8 +188,8 @@ public class NodeService {
 
     private boolean ping(String url) {
         try {
-            restTemplate.getForObject(url + "/api/health", Map.class);
-            return true;
+            Map<?, ?> response = restTemplate.getForObject(url + "/api/health", Map.class);
+            return response != null && "UP".equals(response.get("status"));
         } catch (Exception e) {
             return false;
         }
