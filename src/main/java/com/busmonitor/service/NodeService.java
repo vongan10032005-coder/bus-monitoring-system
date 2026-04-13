@@ -263,11 +263,8 @@ public class NodeService {
         if (shuttingDown) return;
         ensureInit();
 
-        // BUG FIX 4: epoch=0 la token cu (code truoc), chap nhan de khong break
-        if (incoming.getEpoch() > 0 && incoming.getEpoch() < currentEpoch) {
-            log("⚠️ Token epoch cu (" + incoming.getEpoch() + " < " + currentEpoch + "), bo qua");
-            return;
-        }
+        // Luon cap nhat epoch theo token moi de pha ma tran Deadlock cua cac Leader cu
+        this.currentEpoch = incoming.getEpoch();
 
         // BUG FIX 5: Kiem tra vong lap - tram nay da xu ly chua?
         if (incoming.getRoundEntries() != null) {
@@ -312,10 +309,9 @@ public class NodeService {
 
     public synchronized void receiveTokenBack(BusToken incoming) {
         if (shuttingDown) return;
-        if (incoming.getEpoch() > 0 && incoming.getEpoch() < currentEpoch) {
-            log("⚠️ Token-back epoch cu, bo qua");
-            return;
-        }
+        
+        // Luon cap nhat epoch theo token moi de chan Deadlock
+        this.currentEpoch = incoming.getEpoch();
 
         // Tieu huy ghost token do Watchdog sinh ra thua
         if (!this.inTransit) {
