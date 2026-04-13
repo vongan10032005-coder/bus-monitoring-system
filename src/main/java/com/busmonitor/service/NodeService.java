@@ -3,6 +3,7 @@ package com.busmonitor.service;
 import com.busmonitor.model.BusToken;
 import com.busmonitor.model.RoundLog;
 import com.busmonitor.repository.RoundLogRepository;
+import jakarta.annotation.PreDestroy;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
@@ -61,6 +62,7 @@ public class NodeService {
     private volatile boolean isLeader    = false;
     private volatile String  leaderId    = "";
     private volatile int     currentEpoch = 0;
+    private volatile boolean shuttingDown = false;
     private boolean  initialized = false;
 
     private final List<String> logs = Collections.synchronizedList(new ArrayList<>());
@@ -95,10 +97,21 @@ public class NodeService {
         log("🚀 Khoi dong: " + myId + " (thu tu: " + myOrder + ")");
     }
 
+    // ==================== SHUTDOWN ====================
+
+    @PreDestroy
+    public void shutdown() {
+        shuttingDown = true;
+        isRunning = false;
+        scheduler.shutdownNow();
+        log("🛑 Server dang tat...");
+    }
+
     // ==================== PING & LEADER ELECTION ====================
 
     @Scheduled(fixedDelay = 10000)
     public void pingAndElect() {
+        if (shuttingDown) return;
         ensureInit();
         // Ping all peers
         allUrls.forEach((id, url) -> {
@@ -186,7 +199,7 @@ public class NodeService {
 
     // Leader khoi tao vong moi
     private synchronized void processAsLeader() {
-        if (!isRunning || !isLeader || inTransit) return;
+        if (shuttingDown || !isRunning || !isLeader || inTransit) return;
 
         int boarded  = new Random().nextInt(10) + 1;
         int alighted = Math.min(token.getCurrentPassengers(), new Random().nextInt(5));
@@ -232,6 +245,7 @@ public class NodeService {
 
     // Non-leader nhan token, xu ly, forwardd
     public synchronized void receiveToken(BusToken incoming) {
+        if (shuttingDown) return;
         ensureInit();
 
         // Tu choi token tu epoch cu (chong split-brain)
@@ -278,6 +292,7 @@ public class NodeService {
 
     // Leader nhan token sau khi da di het 1 vong
     public synchronized void receiveTokenBack(BusToken incoming) {
+        if (shuttingDown) return;
         // Tu choi token tu epoch cu
         // epoch=0 nghia la token di qua server code cu, khong reject
         if (incoming.getEpoch() > 0 && incoming.getEpoch() < currentEpoch) {
@@ -405,7 +420,7 @@ public class NodeService {
      * Chi luu nhung ban ghi chua co trong DB cua minh.
      */
     public void receiveSyncData(List<Map<String, Object>> entries) {
-        if (entries == null) return;
+        if (shuttingDown || entries == null) return;
         int saved = 0;
         for (Map<String, Object> e : entries) {
             try {
@@ -438,6 +453,7 @@ public class NodeService {
      * Goi async tu scheduler de khong block ping cycle.
      */
     private void syncDataToServer(String serverId) {
+        if (shuttingDown) return;
         String url = allUrls.get(serverId);
         if (url == null) return;
 
