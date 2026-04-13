@@ -66,6 +66,7 @@ public class NodeService {
     private volatile String  leaderId    = "";
     private volatile int     currentEpoch = 0;
     private volatile boolean shuttingDown = false;
+    private volatile long    lastTokenTime = System.currentTimeMillis();
     private boolean  initialized = false;
 
     private final List<String> logs = Collections.synchronizedList(new ArrayList<>());
@@ -133,9 +134,22 @@ public class NodeService {
         });
         electLeader();
 
-        // Watchdog: neu la leader, he thong chay, token khong di -> khoi dong lai
-        if (isLeader && isRunning && !inTransit && !shuttingDown) {
-            scheduler.schedule(this::processAsLeader, 2, TimeUnit.SECONDS);
+        // Watchdog: neu la leader, he thong chay...
+        if (isLeader && isRunning && !shuttingDown) {
+            long idleTime = System.currentTimeMillis() - lastTokenTime;
+            if (!inTransit && idleTime > 5000) {
+                // Token ve roi nhung bi ket, khoi dong vong moi
+                scheduler.schedule(this::processAsLeader, 0, TimeUnit.SECONDS);
+            } else if (inTransit && idleTime > 30000) {
+                // Token di hon 30s chua ve hoac bi chet giua duong
+                log("⚠️ Watchdog: Token bi mat tren duong qua 30s! Tao lai token.");
+                inTransit = false;
+                lastTokenTime = System.currentTimeMillis();
+                currentEpoch++;
+                token = new BusToken();
+                token.setEpoch(currentEpoch);
+                scheduler.schedule(this::processAsLeader, 0, TimeUnit.SECONDS);
+            }
         }
     }
 
@@ -192,6 +206,7 @@ public class NodeService {
             currentEpoch++;
             token = new BusToken();
             token.setEpoch(currentEpoch);
+            lastTokenTime = System.currentTimeMillis();
             scheduler.schedule(this::processAsLeader, 500, TimeUnit.MILLISECONDS);
         }
         return "Khoi dong! Leader: " + leaderId;
@@ -249,6 +264,8 @@ public class NodeService {
         token.setActiveServers(active);
 
         inTransit = true;
+        lastTokenTime = System.currentTimeMillis();
+        syncExecutor.submit(() -> broadcastUiState(token));
         sendToNext(myId, active);
     }
 
@@ -294,6 +311,9 @@ public class NodeService {
         log(String.format("🚉 %s: +%d len, -%d xuong | %d nguoi | %.0f VND",
                 myName, boarded, alighted, token.getCurrentPassengers(), revenue));
 
+        lastTokenTime = System.currentTimeMillis();
+        syncExecutor.submit(() -> broadcastUiState(token));
+
         // Forward to next alive server
         List<String> active = new ArrayList<>(token.getActiveServers());
         sendToNext(myId, active);
@@ -312,6 +332,9 @@ public class NodeService {
         this.token = incoming;
         this.token.setTotalRounds(incoming.getTotalRounds() + 1);
         this.inTransit = false;
+        this.lastTokenTime = System.currentTimeMillis();
+
+        syncExecutor.submit(() -> broadcastUiState(token));
 
         log("🏁 Vong #" + token.getTotalRounds() + " hoan thanh! Tong: "
                 + String.format("%.0f", token.getTotalRevenue()) + " VND");
@@ -424,6 +447,29 @@ public class NodeService {
                 log("⚠️ Dong bo that bai den " + id);
             }
         });
+    }
+
+    /**
+     * Broadcast UI State lien tuc den tat ca cac node
+     */
+    private void broadcastUiState(BusToken t) {
+        if (shuttingDown) return;
+        allUrls.forEach((id, url) -> {
+            if (id.equals(myId) || !Boolean.TRUE.equals(peerStatus.get(id))) return;
+            try {
+                restTemplate.postForObject(url + "/api/sync-ui", t, String.class);
+            } catch (Exception e) {}
+        });
+    }
+
+    /**
+     * Nhan Token UI Update
+     */
+    public void updateUiToken(BusToken t) {
+        if (t != null && t.getEpoch() >= currentEpoch) {
+            this.token = t;
+            this.lastTokenTime = System.currentTimeMillis();
+        }
     }
 
     /**
