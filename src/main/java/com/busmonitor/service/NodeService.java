@@ -77,17 +77,24 @@ public class NodeService {
         if (initialized) return;
         initialized = true;
 
-        allUrls.put("server1-ngan", url1);
-        allUrls.put("server2-nhi",  url2);
-        allUrls.put("server3-my",   url3);
-        allUrls.put("server4-suong",url4);
-        allUrls.put("server5-hang", url5);
+        allUrls.put("server1-ngan", "https://server1-ngan.onrender.com");
+        allUrls.put("server2-nhi",  "https://server2-nhi.onrender.com");
+        allUrls.put("server3-my",   "https://server3-my.onrender.com");
+        allUrls.put("server4-suong","https://server4-suong.onrender.com");
+        allUrls.put("server5-hang", "https://server5-hang.onrender.com");
 
         allOrders.put("server1-ngan", 1);
         allOrders.put("server2-nhi",  2);
         allOrders.put("server3-my",   3);
         allOrders.put("server4-suong",4);
         allOrders.put("server5-hang", 5);
+
+        // Ultimate fail-safe to override ANY environment variable typos!
+        if ("server1-ngan".equals(myId)) { myName = "Tram 1 - Ngan"; myOrder = 1; }
+        if ("server2-nhi".equals(myId)) { myName = "Tram 2 - Nhi"; myOrder = 2; }
+        if ("server3-my".equals(myId)) { myName = "Tram 3 - My"; myOrder = 3; }
+        if ("server4-suong".equals(myId)) { myName = "Tram 4 - Suong"; myOrder = 4; }
+        if ("server5-hang".equals(myId)) { myName = "Tram 5 - Hang"; myOrder = 5; }
 
         // BUG FIX 1: Tat ca peer mac dinh la FALSE cho den khi ping xac nhan
         allUrls.forEach((id, url) -> {
