@@ -52,13 +52,13 @@ public class StationController {
 
     @PostMapping("/api/sync-ui")
     public ResponseEntity<String> syncUi(@RequestBody BusToken t) {
-        node.updateUiToken(t);
+        new Thread(() -> node.updateUiToken(t)).start();
         return ResponseEntity.ok("OK");
     }
 
     @PostMapping("/api/sync-round")
     public ResponseEntity<String> syncRound(@RequestBody List<Map<String, Object>> entries) {
-        node.receiveSyncData(entries);
+        new Thread(() -> node.receiveSyncData(entries)).start();
         return ResponseEntity.ok("OK");
     }
 
