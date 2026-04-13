@@ -236,7 +236,11 @@ public class NodeService {
         token.setRoundEntries(new ArrayList<>());
 
         int roundNum = token.getTotalRounds() + 1;
-        roundLogRepository.save(new RoundLog(roundNum, boarded, alighted, revenue, myName));
+        try {
+            roundLogRepository.save(new RoundLog(roundNum, boarded, alighted, revenue, myName));
+        } catch (Exception e) {
+            log("⚠️ DB Save Error (Leader): " + e.getMessage());
+        }
 
         Map<String, Object> entry = new LinkedHashMap<>();
         entry.put("roundNumber", roundNum);
@@ -294,7 +298,11 @@ public class NodeService {
         token.setLastStation(myId);
 
         int roundNum = token.getTotalRounds() + 1;
-        roundLogRepository.save(new RoundLog(roundNum, boarded, alighted, revenue, myName));
+        try {
+            roundLogRepository.save(new RoundLog(roundNum, boarded, alighted, revenue, myName));
+        } catch (Exception e) {
+            log("⚠️ DB Save Error (Follower): " + e.getMessage());
+        }
 
         Map<String, Object> entry = new LinkedHashMap<>();
         entry.put("roundNumber", roundNum);
