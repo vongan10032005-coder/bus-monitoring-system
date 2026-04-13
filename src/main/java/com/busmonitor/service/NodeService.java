@@ -25,13 +25,9 @@ public class NodeService {
     private final RestTemplate restTemplate;
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("HH:mm:ss");
 
-    // Scheduler CHI danh cho token ring (processAsLeader)
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
-
-    // Thread pool RIENG cho dong bo du lieu - khong block token ring
     private final ExecutorService syncExecutor = Executors.newCachedThreadPool();
 
-    // MY IDENTITY - set qua bien moi truong tren Render
     @Value("${station.id}")
     private String myId;
 
@@ -41,7 +37,6 @@ public class NodeService {
     @Value("${station.name}")
     private String myName;
 
-    // ALL SERVER URLs
     @Value("${server1.url}")
     private String url1;
     @Value("${server2.url}")
@@ -53,30 +48,27 @@ public class NodeService {
     @Value("${server5.url}")
     private String url5;
 
-    // Registry
-    private final Map<String, String>  allUrls   = new LinkedHashMap<>();
-    private final Map<String, Integer> allOrders = new LinkedHashMap<>();
+    private final Map<String, String>  allUrls    = new LinkedHashMap<>();
+    private final Map<String, Integer> allOrders  = new LinkedHashMap<>();
     private final Map<String, Boolean> peerStatus = new ConcurrentHashMap<>();
 
-    // State - volatile de dam bao thread safety
-    private BusToken token          = new BusToken();
-    private volatile boolean isRunning   = false;
-    private volatile boolean inTransit   = false;
-    private volatile boolean isLeader    = false;
-    private volatile String  leaderId    = "";
+    private volatile BusToken token       = new BusToken();
+    private volatile boolean isRunning    = false;
+    private volatile boolean inTransit    = false;
+    private volatile boolean isLeader     = false;
+    private volatile String  leaderId     = "";
     private volatile int     currentEpoch = 0;
     private volatile boolean shuttingDown = false;
     private volatile long    lastTokenTime = System.currentTimeMillis();
-    private boolean  initialized = false;
+    private boolean initialized = false;
 
     private final List<String> logs = Collections.synchronizedList(new ArrayList<>());
 
-    // Constructor: cau hinh RestTemplate voi timeout
     public NodeService() {
-        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(5000);   // 5s connect timeout
-        factory.setReadTimeout(10000);     // 10s read timeout
-        this.restTemplate = new RestTemplate(factory);
+        SimpleClientHttpRequestFactory f = new SimpleClientHttpRequestFactory();
+        f.setConnectTimeout(5000);
+        f.setReadTimeout(10000);
+        this.restTemplate = new RestTemplate(f);
     }
 
     // ==================== INIT ====================
@@ -84,24 +76,28 @@ public class NodeService {
     private synchronized void ensureInit() {
         if (initialized) return;
         initialized = true;
+
         allUrls.put("server1-ngan", url1);
         allUrls.put("server2-nhi",  url2);
         allUrls.put("server3-my",   url3);
         allUrls.put("server4-suong",url4);
         allUrls.put("server5-hang", url5);
+
         allOrders.put("server1-ngan", 1);
         allOrders.put("server2-nhi",  2);
         allOrders.put("server3-my",   3);
         allOrders.put("server4-suong",4);
         allOrders.put("server5-hang", 5);
-        // Default: all peers offline until pinged
+
+        // BUG FIX 1: Tat ca peer mac dinh la FALSE cho den khi ping xac nhan
         allUrls.forEach((id, url) -> {
             if (!id.equals(myId)) peerStatus.put(id, false);
         });
-        log("🚀 Khoi dong: " + myId + " (thu tu: " + myOrder + ")");
-    }
 
-    // ==================== SHUTDOWN ====================
+        log("🚀 Khoi dong: " + myId + " | Thu tu: " + myOrder);
+        log("📍 URL cua toi: " + allUrls.get(myId));
+        log("🔗 URL cac peer: " + allUrls);
+    }
 
     @PreDestroy
     public void shutdown() {
@@ -109,7 +105,6 @@ public class NodeService {
         isRunning = false;
         scheduler.shutdownNow();
         syncExecutor.shutdownNow();
-        log("🛑 Server dang tat...");
     }
 
     // ==================== PING & LEADER ELECTION ====================
@@ -118,31 +113,32 @@ public class NodeService {
     public void pingAndElect() {
         if (shuttingDown) return;
         ensureInit();
-        // Ping all peers
+
         allUrls.forEach((id, url) -> {
             if (id.equals(myId)) return;
             boolean wasAlive = peerStatus.getOrDefault(id, false);
             boolean alive    = ping(url);
             peerStatus.put(id, alive);
+
             if (!wasAlive && alive) {
                 log("✅ " + id + " hoi phuc! Them lai vao vong.");
-                // Dong bo du lieu den server vua hoi phuc (chay async tren syncExecutor)
-                final String recoveredId = id;
-                syncExecutor.submit(() -> syncDataToServer(recoveredId));
+                syncExecutor.submit(() -> syncDataToServer(id));
             }
-            if (wasAlive  && !alive) log("❌ " + id + " mat ket noi! Loai khoi vong.");
+            if (wasAlive && !alive) {
+                log("❌ " + id + " mat ket noi! Loai khoi vong.");
+            }
         });
+
         electLeader();
 
-        // Watchdog: neu la leader, he thong chay...
+        // Watchdog
         if (isLeader && isRunning && !shuttingDown) {
-            long idleTime = System.currentTimeMillis() - lastTokenTime;
-            if (!inTransit && idleTime > 5000) {
-                // Token ve roi nhung bi ket, khoi dong vong moi
+            long idle = System.currentTimeMillis() - lastTokenTime;
+            if (!inTransit && idle > 6000) {
+                log("🔄 Watchdog: khoi dong vong moi...");
                 scheduler.schedule(this::processAsLeader, 0, TimeUnit.SECONDS);
-            } else if (inTransit && idleTime > 30000) {
-                // Token di hon 30s chua ve hoac bi chet giua duong
-                log("⚠️ Watchdog: Token bi mat tren duong qua 30s! Tao lai token.");
+            } else if (inTransit && idle > 30000) {
+                log("⚠️ Watchdog: Token bi mat 30s! Tao lai token moi.");
                 inTransit = false;
                 lastTokenTime = System.currentTimeMillis();
                 currentEpoch++;
@@ -154,9 +150,9 @@ public class NodeService {
     }
 
     private void electLeader() {
-        // Find lowest-order alive server = leader (Bully Algorithm)
-        String best  = myId;
-        int bestOrd  = myOrder;
+        String best   = myId;
+        int    bestOrd = myOrder;
+
         for (Map.Entry<String, Boolean> e : peerStatus.entrySet()) {
             if (Boolean.TRUE.equals(e.getValue())) {
                 int ord = allOrders.getOrDefault(e.getKey(), 99);
@@ -169,27 +165,25 @@ public class NodeService {
         leaderId = best;
 
         if (!wasLeader && isLeader) {
-            // Toi vua duoc bau lam leader moi
             currentEpoch++;
-            log("👑 " + myId + " duoc bau lam LEADER! (epoch " + currentEpoch + ")");
-            // Token recovery: tao token moi de phuc hoi he thong
-            isRunning = true;
-            inTransit = false;
-            token = new BusToken();
+            log("👑 " + myId + " DUOC BAU LAM LEADER! (epoch " + currentEpoch + ")");
+            isRunning  = true;
+            inTransit  = false;
+            token      = new BusToken();
             token.setEpoch(currentEpoch);
-            log("🔄 Tao token moi (epoch " + currentEpoch + ") de phuc hoi he thong");
             scheduler.schedule(this::processAsLeader, 3, TimeUnit.SECONDS);
         } else if (wasLeader && !isLeader) {
-            log("📤 Nhuong leader cho " + best);
+            log("📤 Nhuong leader cho " + best + " (epoch " + currentEpoch + ")");
             isRunning = false;
             inTransit = false;
         }
     }
 
+    // BUG FIX 2: Kiem tra ca status tra ve, khong chi exception
     private boolean ping(String url) {
         try {
-            Map<?, ?> response = restTemplate.getForObject(url + "/api/health", Map.class);
-            return response != null && "UP".equals(response.get("status"));
+            Map<?, ?> resp = restTemplate.getForObject(url + "/api/health", Map.class);
+            return resp != null && "UP".equals(resp.get("status"));
         } catch (Exception e) {
             return false;
         }
@@ -221,7 +215,6 @@ public class NodeService {
 
     // ==================== TOKEN PROCESSING ====================
 
-    // Leader khoi tao vong moi
     private synchronized void processAsLeader() {
         if (shuttingDown || !isRunning || !isLeader || inTransit) return;
 
@@ -233,16 +226,11 @@ public class NodeService {
         token.setLastStation(myId);
         token.setCurrentLeader(myId);
         token.setEpoch(currentEpoch);
-
-        // Xoa round entries cu, bat dau vong moi
         token.setRoundEntries(new ArrayList<>());
+
         int roundNum = token.getTotalRounds() + 1;
+        roundLogRepository.save(new RoundLog(roundNum, boarded, alighted, revenue, myName));
 
-        // Save to MY DB
-        roundLogRepository.save(new RoundLog(
-                roundNum, boarded, alighted, revenue, myName));
-
-        // Them entry cua toi vao token de dong bo
         Map<String, Object> entry = new LinkedHashMap<>();
         entry.put("roundNumber", roundNum);
         entry.put("passengersBoarded", boarded);
@@ -254,7 +242,7 @@ public class NodeService {
         log(String.format("🚉 %s [LEADER]: +%d len, -%d xuong | %d nguoi | %.0f VND",
                 myName, boarded, alighted, token.getCurrentPassengers(), revenue));
 
-        // Build list of alive peers (excluding self)
+        // BUG FIX 3: Build active list dung - chi lay peer thuc su ONLINE
         List<String> active = new ArrayList<>();
         allUrls.forEach((id, url) -> {
             if (!id.equals(myId) && Boolean.TRUE.equals(peerStatus.get(id))) {
@@ -263,29 +251,36 @@ public class NodeService {
         });
         token.setActiveServers(active);
 
+        log("📋 Active peers: " + active);
+
         inTransit = true;
         lastTokenTime = System.currentTimeMillis();
         syncExecutor.submit(() -> broadcastUiState(token));
         sendToNext(myId, active);
     }
 
-    // Non-leader nhan token, xu ly, forwardd
     public synchronized void receiveToken(BusToken incoming) {
         if (shuttingDown) return;
         ensureInit();
 
-        // Tu choi token tu epoch cu (chong split-brain)
-        // epoch=0 nghia la token di qua server code cu, khong reject
+        // BUG FIX 4: epoch=0 la token cu (code truoc), chap nhan de khong break
         if (incoming.getEpoch() > 0 && incoming.getEpoch() < currentEpoch) {
-            log("⚠️ Nhan token tu epoch cu (" + incoming.getEpoch() + " < " + currentEpoch + "), bo qua");
+            log("⚠️ Token epoch cu (" + incoming.getEpoch() + " < " + currentEpoch + "), bo qua");
             return;
         }
 
-        this.token = incoming;
-        // Cap nhat epoch neu cao hon
-        if (incoming.getEpoch() > currentEpoch) {
-            currentEpoch = incoming.getEpoch();
+        // BUG FIX 5: Kiem tra vong lap - tram nay da xu ly chua?
+        if (incoming.getRoundEntries() != null) {
+            for (Map<String, Object> e : incoming.getRoundEntries()) {
+                if (myName.equals(e.get("stationName"))) {
+                    log("⚠️ Vong lap! Tram " + myName + " da xu ly roi. Bo qua.");
+                    return;
+                }
+            }
         }
+
+        this.token = incoming;
+        if (incoming.getEpoch() > currentEpoch) currentEpoch = incoming.getEpoch();
 
         int boarded  = new Random().nextInt(8) + 1;
         int alighted = Math.min(token.getCurrentPassengers(), new Random().nextInt(5));
@@ -295,11 +290,8 @@ public class NodeService {
         token.setLastStation(myId);
 
         int roundNum = token.getTotalRounds() + 1;
+        roundLogRepository.save(new RoundLog(roundNum, boarded, alighted, revenue, myName));
 
-        roundLogRepository.save(new RoundLog(
-                roundNum, boarded, alighted, revenue, myName));
-
-        // Them entry cua toi vao token de dong bo
         Map<String, Object> entry = new LinkedHashMap<>();
         entry.put("roundNumber", roundNum);
         entry.put("passengersBoarded", boarded);
@@ -314,18 +306,14 @@ public class NodeService {
         lastTokenTime = System.currentTimeMillis();
         syncExecutor.submit(() -> broadcastUiState(token));
 
-        // Forward to next alive server
         List<String> active = new ArrayList<>(token.getActiveServers());
         sendToNext(myId, active);
     }
 
-    // Leader nhan token sau khi da di het 1 vong
     public synchronized void receiveTokenBack(BusToken incoming) {
         if (shuttingDown) return;
-        // Tu choi token tu epoch cu
-        // epoch=0 nghia la token di qua server code cu, khong reject
         if (incoming.getEpoch() > 0 && incoming.getEpoch() < currentEpoch) {
-            log("⚠️ Nhan token-back tu epoch cu (" + incoming.getEpoch() + " < " + currentEpoch + "), bo qua");
+            log("⚠️ Token-back epoch cu, bo qua");
             return;
         }
 
@@ -334,113 +322,99 @@ public class NodeService {
         this.inTransit = false;
         this.lastTokenTime = System.currentTimeMillis();
 
-        syncExecutor.submit(() -> broadcastUiState(token));
-
         log("🏁 Vong #" + token.getTotalRounds() + " hoan thanh! Tong: "
                 + String.format("%.0f", token.getTotalRevenue()) + " VND");
 
-        // === DONG BO DU LIEU: broadcast ASYNC de khong block token ring ===
-        final List<Map<String, Object>> entriesToSync = new ArrayList<>(token.getRoundEntries());
-        final int roundNum = token.getTotalRounds();
-        syncExecutor.submit(() -> broadcastRoundData(entriesToSync, roundNum));
+        syncExecutor.submit(() -> broadcastUiState(token));
 
-        // Len lich vong tiep theo (non-blocking, khong de quy)
+        final List<Map<String, Object>> entries = new ArrayList<>(token.getRoundEntries());
+        syncExecutor.submit(() -> broadcastRoundData(entries, token.getTotalRounds()));
+
         if (isRunning && isLeader) {
             scheduler.schedule(this::processAsLeader, 3, TimeUnit.SECONDS);
         }
     }
 
-    // ==================== CHUYEN TOKEN (VONG LAP, KHONG DE QUY) ====================
+    // ==================== CHUYEN TOKEN ====================
 
-    /**
-     * Gui token den server tiep theo trong danh sach active.
-     * Dung vong lap thay vi de quy de tranh StackOverflow.
-     */
     private void sendToNext(String fromId, List<String> active) {
-        int maxAttempts = active.size() + 2; // gioi han an toan
+        // BUG FIX 6: Dung vong lap thay vi de quy tranh StackOverflow
+        int maxAttempts = active.size() + 2;
         int attempts = 0;
+        List<String> remaining = new ArrayList<>(active);
 
         while (attempts < maxAttempts) {
             attempts++;
             String next = null;
+            String tokenLeader = token.getCurrentLeader() != null ? token.getCurrentLeader() : leaderId;
 
-            String intrinsicLeader = token.getCurrentLeader();
-
-            if (fromId.equals(intrinsicLeader)) {
-                // Leader vua xu ly -> gui den peer dau tien
-                next = active.isEmpty() ? null : active.get(0);
+            if (fromId.equals(tokenLeader)) {
+                next = remaining.isEmpty() ? null : remaining.get(0);
             } else {
-                int idx = active.indexOf(fromId);
-                if (idx >= 0 && idx < active.size() - 1) {
-                    next = active.get(idx + 1);
+                int idx = remaining.indexOf(fromId);
+                if (idx >= 0 && idx < remaining.size() - 1) {
+                    next = remaining.get(idx + 1);
                 }
-                // else: cuoi danh sach -> tra ve leader
             }
 
-            // Khong con server nao -> tra token ve leader
             if (next == null) {
-                returnTokenToLeader();
+                returnTokenToLeader(tokenLeader);
                 return;
             }
 
             String nextUrl = allUrls.get(next);
+            if (nextUrl == null) {
+                log("❌ Khong tim thay URL cho " + next + " -> bo qua");
+                remaining.remove(next);
+                token.setActiveServers(new ArrayList<>(remaining));
+                continue;
+            }
+
             try {
-                log("📤 Gui token den " + next);
+                log("📤 Gui token den " + next + " (" + nextUrl + ")");
+                // BUG FIX 7: Bo targetStation check - gay ra loi khi URL cau hinh sai
                 restTemplate.postForObject(nextUrl + "/api/receive-token", token, String.class);
-                return; // Thanh cong!
+                return; // Thanh cong
             } catch (Exception e) {
-                log("❌ Gui that bai den " + next + " -> bo qua, thu server tiep theo");
+                log("❌ Gui that bai den " + next + ": " + e.getMessage());
                 peerStatus.put(next, false);
-                active.remove(next);
-                token.setActiveServers(active);
-                // Vong lap tiep tuc thu server ke tiep
+                remaining.remove(next);
+                token.setActiveServers(new ArrayList<>(remaining));
             }
         }
 
-        // Da het tat ca server
-        log("⚠️ Khong con server nao de gui! Tra token ve leader.");
-        returnTokenToLeader();
+        log("⚠️ Tat ca server that bai! Tra token ve leader.");
+        returnTokenToLeader(token.getCurrentLeader() != null ? token.getCurrentLeader() : leaderId);
     }
 
-    private void returnTokenToLeader() {
-        String tokenLeader = token.getCurrentLeader();
-        if (tokenLeader == null) tokenLeader = leaderId; // Fallback an toan
+    private void returnTokenToLeader(String tokenLeader) {
+        if (tokenLeader == null) tokenLeader = leaderId;
 
         if (myId.equals(tokenLeader)) {
-            // Toi la leader cua token nay, xu ly truc tiep
             receiveTokenBack(token);
             return;
         }
 
         String leaderUrl = allUrls.get(tokenLeader);
         if (leaderUrl == null) {
-            log("❌ Khong tim thay URL cua leader tao token: " + tokenLeader);
+            log("❌ Khong tim thay URL leader: " + tokenLeader);
             return;
         }
         try {
             log("📤 Tra token ve leader: " + tokenLeader);
             restTemplate.postForObject(leaderUrl + "/api/receive-token-back", token, String.class);
         } catch (Exception e) {
-            log("❌ Khong the lien lac leader " + tokenLeader + ": " + e.getMessage());
-            log("⚠️ Token co the bi mat! Leader moi se tao token phuc hoi tu dong.");
+            log("❌ Khong the tra token ve leader " + tokenLeader + ": " + e.getMessage());
         }
     }
 
-    // ==================== DONG BO DU LIEU ====================
+    // ==================== DONG BO ====================
 
-    /**
-     * Leader broadcast du lieu vong hien tai den tat ca server song.
-     * Sau moi vong, tat ca server deu co du lieu cua tat ca cac tram.
-     */
     private void broadcastRoundData(List<Map<String, Object>> entries, int roundNum) {
         if (shuttingDown || entries == null || entries.isEmpty()) return;
-
-        log("📡 Dong bo du lieu vong #" + roundNum + " den tat ca server...");
-
+        log("📡 Dong bo vong #" + roundNum + " den tat ca server...");
         allUrls.forEach((id, url) -> {
-            if (id.equals(myId)) return;
-            if (!Boolean.TRUE.equals(peerStatus.get(id))) return;
-
+            if (id.equals(myId) || !Boolean.TRUE.equals(peerStatus.get(id))) return;
             try {
                 restTemplate.postForObject(url + "/api/sync-round", entries, String.class);
                 log("✅ Dong bo thanh cong den " + id);
@@ -450,22 +424,16 @@ public class NodeService {
         });
     }
 
-    /**
-     * Broadcast UI State lien tuc den tat ca cac node
-     */
     private void broadcastUiState(BusToken t) {
         if (shuttingDown) return;
         allUrls.forEach((id, url) -> {
             if (id.equals(myId) || !Boolean.TRUE.equals(peerStatus.get(id))) return;
             try {
                 restTemplate.postForObject(url + "/api/sync-ui", t, String.class);
-            } catch (Exception e) {}
+            } catch (Exception ignored) {}
         });
     }
 
-    /**
-     * Nhan Token UI Update
-     */
     public void updateUiToken(BusToken t) {
         if (t != null && t.getEpoch() >= currentEpoch) {
             this.token = t;
@@ -473,57 +441,38 @@ public class NodeService {
         }
     }
 
-    /**
-     * Nhan du lieu dong bo tu leader.
-     * Chi luu nhung ban ghi chua co trong DB cua minh.
-     */
     public void receiveSyncData(List<Map<String, Object>> entries) {
         if (shuttingDown || entries == null) return;
         int saved = 0;
         for (Map<String, Object> e : entries) {
             try {
-                int roundNumber = ((Number) e.get("roundNumber")).intValue();
+                int roundNumber    = ((Number) e.get("roundNumber")).intValue();
                 String stationName = (String) e.get("stationName");
-
-                // Bo qua entry cua chinh minh (da luu roi)
-                if (stationName != null && stationName.equals(myName)) continue;
-
-                // Bo qua neu da ton tai trong DB (tranh trung lap)
+                if (stationName == null || stationName.equals(myName)) continue;
                 if (roundLogRepository.existsByRoundNumberAndStationName(roundNumber, stationName)) continue;
 
-                int boarded = ((Number) e.get("passengersBoarded")).intValue();
-                int alighted = ((Number) e.get("passengersAlighted")).intValue();
+                int boarded    = ((Number) e.get("passengersBoarded")).intValue();
+                int alighted   = ((Number) e.get("passengersAlighted")).intValue();
                 double revenue = ((Number) e.get("revenue")).doubleValue();
-
                 roundLogRepository.save(new RoundLog(roundNumber, boarded, alighted, revenue, stationName));
                 saved++;
             } catch (Exception ex) {
-                log("⚠️ Loi khi xu ly ban ghi dong bo: " + ex.getMessage());
+                log("⚠️ Loi dong bo: " + ex.getMessage());
             }
         }
-        if (saved > 0) {
-            log("📥 Dong bo: luu " + saved + " ban ghi moi tu cac tram khac");
-        }
+        if (saved > 0) log("📥 Dong bo: da luu " + saved + " ban ghi moi");
     }
 
-    /**
-     * Khi mot server hoi phuc, dong bo TOAN BO du lieu cho server do.
-     * Goi async tu scheduler de khong block ping cycle.
-     */
     private void syncDataToServer(String serverId) {
         if (shuttingDown) return;
         String url = allUrls.get(serverId);
         if (url == null) return;
-
         try {
-            List<RoundLog> allLogs = roundLogRepository.findTop200ByOrderByTimestampDesc();
-            if (allLogs.isEmpty()) return;
-
+            List<RoundLog> all = roundLogRepository.findTop200ByOrderByTimestampDesc();
+            if (all.isEmpty()) return;
             List<Map<String, Object>> entries = new ArrayList<>();
-            for (RoundLog rl : allLogs) {
-                // Bo qua ban ghi SYSTEM_INIT
+            for (RoundLog rl : all) {
                 if ("SYSTEM_INIT".equals(rl.getStationName())) continue;
-
                 Map<String, Object> entry = new LinkedHashMap<>();
                 entry.put("roundNumber", rl.getRoundNumber());
                 entry.put("passengersBoarded", rl.getPassengersBoarded());
@@ -532,40 +481,34 @@ public class NodeService {
                 entry.put("stationName", rl.getStationName());
                 entries.add(entry);
             }
-
             if (!entries.isEmpty()) {
                 restTemplate.postForObject(url + "/api/sync-round", entries, String.class);
-                log("📡 Da dong bo " + entries.size() + " ban ghi den " + serverId + " (hoi phuc)");
+                log("📡 Dong bo " + entries.size() + " ban ghi den " + serverId + " (hoi phuc)");
             }
         } catch (Exception e) {
-            log("⚠️ Dong bo du lieu den " + serverId + " that bai: " + e.getMessage());
+            log("⚠️ Dong bo den " + serverId + " that bai: " + e.getMessage());
         }
     }
 
     // ==================== GETTERS ====================
 
-    public String  getMyId()          { ensureInit(); return myId; }
-    public boolean isLeader()         { return isLeader; }
-    public String  getLeaderId()      { return leaderId; }
-    public boolean isRunning()        { return isRunning; }
-    public boolean isInTransit()      { return inTransit; }
-    public BusToken getToken()        { return token; }
-    public int     getCurrentEpoch()  { return currentEpoch; }
-    public List<RoundLog> getDbLogs() { return roundLogRepository.findTop10ByOrderByTimestampDesc(); }
-    public List<String>   getLogs()   { return new ArrayList<>(logs); }
+    public String  getMyId()         { ensureInit(); return myId; }
+    public boolean isLeader()        { return isLeader; }
+    public String  getLeaderId()     { return leaderId; }
+    public boolean isRunning()       { return isRunning; }
+    public boolean isInTransit()     { return inTransit; }
+    public BusToken getToken()       { return token; }
+    public int     getCurrentEpoch() { return currentEpoch; }
+    public List<RoundLog> getDbLogs(){ return roundLogRepository.findTop10ByOrderByTimestampDesc(); }
+    public List<String>   getLogs()  { return new ArrayList<>(logs); }
 
     public Map<String, Boolean> getServerStatus() {
         ensureInit();
         Map<String, Boolean> result = new LinkedHashMap<>();
-        allUrls.forEach((id, url) -> {
-            if (id.equals(myId)) {
-                result.put(id, true); // I am always alive
-            } else {
-                // Only TRUE if explicitly confirmed alive by ping
-                boolean alive = Boolean.TRUE.equals(peerStatus.get(id));
-                result.put(id, alive);
-            }
-        });
+        allUrls.forEach((id, url) ->
+            // BUG FIX 8: Dung Boolean.TRUE.equals() tranh NullPointerException
+            result.put(id, id.equals(myId) ? true : Boolean.TRUE.equals(peerStatus.get(id)))
+        );
         return result;
     }
 

@@ -9,7 +9,6 @@
 DROP TABLE IF EXISTS round_logs;
 
 -- Tao bang chinh luu lich su hanh khach theo vong
--- Du lieu duoc DONG BO tu tat ca cac tram qua co che broadcast
 CREATE TABLE round_logs (
     id          BIGSERIAL PRIMARY KEY,
     round_number        INTEGER         NOT NULL,
@@ -17,11 +16,7 @@ CREATE TABLE round_logs (
     passengers_alighted INTEGER         NOT NULL DEFAULT 0,
     revenue             DECIMAL(15,2)   NOT NULL DEFAULT 0,
     station_name        VARCHAR(100)    NOT NULL,
-    timestamp           TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    -- Rang buoc duy nhat: moi tram chi co 1 ban ghi cho moi vong
-    -- Giup tranh trung lap khi dong bo du lieu giua cac server
-    CONSTRAINT uq_round_station UNIQUE (round_number, station_name)
+    timestamp           TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Index tang toc truy van
