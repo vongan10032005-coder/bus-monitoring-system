@@ -58,7 +58,7 @@ public class StationController {
 
     @PostMapping("/api/sync-round")
     public ResponseEntity<String> syncRound(@RequestBody List<Map<String, Object>> entries) {
-        syncExecutor.submit(() -> node.receiveSyncData(entries));
+        new Thread(() -> node.receiveSyncData(entries)).start();
         return ResponseEntity.ok("OK");
     }
 
