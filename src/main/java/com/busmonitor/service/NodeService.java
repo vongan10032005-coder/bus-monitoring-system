@@ -267,6 +267,9 @@ public class NodeService {
         inTransit = true;
         lastTokenTime = System.currentTimeMillis();
         syncExecutor.submit(() -> broadcastUiState(token));
+        
+        try { Thread.sleep(1500); } catch (Exception e) {} // Tao do tre 1.5s de Tivi hien thi
+        
         sendToNext(myId, active);
     }
 
@@ -317,6 +320,8 @@ public class NodeService {
 
         lastTokenTime = System.currentTimeMillis();
         syncExecutor.submit(() -> broadcastUiState(token));
+
+        try { Thread.sleep(1500); } catch (Exception e) {} // Tao do tre 1.5s de Tivi hien thi
 
         List<String> active = new ArrayList<>(token.getActiveServers());
         sendToNext(myId, active);
@@ -465,6 +470,14 @@ public class NodeService {
         }
     }
 
+    public void receiveGlobalLog(String msg) {
+        if (shuttingDown || msg == null) return;
+        synchronized (logs) {
+            logs.add(msg);
+            if (logs.size() > 300) logs.remove(0);
+        }
+    }
+
     public void receiveSyncData(List<Map<String, Object>> entries) {
         if (shuttingDown || entries == null) return;
         int saved = 0;
@@ -542,8 +555,21 @@ public class NodeService {
 
     private void log(String msg) {
         String entry = "[" + LocalDateTime.now().format(FMT) + "] " + msg;
-        logs.add(entry);
-        System.out.println(entry);
-        if (logs.size() > 300) logs.remove(0);
+        synchronized (logs) {
+            logs.add(entry);
+            System.out.println(entry);
+            if (logs.size() > 300) logs.remove(0);
+        }
+        
+        if (shuttingDown) return;
+        // Phat thanh nhat ky nay dien toan thieu the gioi
+        syncExecutor.submit(() -> {
+            allUrls.forEach((id, url) -> {
+                if (id.equals(myId) || !Boolean.TRUE.equals(peerStatus.get(id))) return;
+                try {
+                    restTemplate.postForObject(url + "/api/sync-log", entry, String.class);
+                } catch (Exception ignored) {}
+            });
+        });
     }
 }
