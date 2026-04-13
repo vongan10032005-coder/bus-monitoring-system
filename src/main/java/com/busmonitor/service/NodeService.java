@@ -25,8 +25,11 @@ public class NodeService {
     private final RestTemplate restTemplate;
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("HH:mm:ss");
 
-    // Scheduler thay cho Thread.sleep de tranh de quy va blocking
+    // Scheduler CHI danh cho token ring (processAsLeader)
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+
+    // Thread pool RIENG cho dong bo du lieu - khong block token ring
+    private final ExecutorService syncExecutor = Executors.newCachedThreadPool();
 
     // MY IDENTITY - set qua bien moi truong tren Render
     @Value("${station.id}")
@@ -104,6 +107,7 @@ public class NodeService {
         shuttingDown = true;
         isRunning = false;
         scheduler.shutdownNow();
+        syncExecutor.shutdownNow();
         log("🛑 Server dang tat...");
     }
 
@@ -121,9 +125,9 @@ public class NodeService {
             peerStatus.put(id, alive);
             if (!wasAlive && alive) {
                 log("✅ " + id + " hoi phuc! Them lai vao vong.");
-                // Dong bo du lieu den server vua hoi phuc (chay async)
+                // Dong bo du lieu den server vua hoi phuc (chay async tren syncExecutor)
                 final String recoveredId = id;
-                scheduler.schedule(() -> syncDataToServer(recoveredId), 2, TimeUnit.SECONDS);
+                syncExecutor.submit(() -> syncDataToServer(recoveredId));
             }
             if (wasAlive  && !alive) log("❌ " + id + " mat ket noi! Loai khoi vong.");
         });
@@ -312,8 +316,10 @@ public class NodeService {
         log("🏁 Vong #" + token.getTotalRounds() + " hoan thanh! Tong: "
                 + String.format("%.0f", token.getTotalRevenue()) + " VND");
 
-        // === DONG BO DU LIEU: broadcast round data den tat ca server ===
-        broadcastRoundData(token.getRoundEntries());
+        // === DONG BO DU LIEU: broadcast ASYNC de khong block token ring ===
+        final List<Map<String, Object>> entriesToSync = new ArrayList<>(token.getRoundEntries());
+        final int roundNum = token.getTotalRounds();
+        syncExecutor.submit(() -> broadcastRoundData(entriesToSync, roundNum));
 
         // Len lich vong tiep theo (non-blocking, khong de quy)
         if (isRunning && isLeader) {
@@ -402,10 +408,10 @@ public class NodeService {
      * Leader broadcast du lieu vong hien tai den tat ca server song.
      * Sau moi vong, tat ca server deu co du lieu cua tat ca cac tram.
      */
-    private void broadcastRoundData(List<Map<String, Object>> entries) {
-        if (entries == null || entries.isEmpty()) return;
+    private void broadcastRoundData(List<Map<String, Object>> entries, int roundNum) {
+        if (shuttingDown || entries == null || entries.isEmpty()) return;
 
-        log("📡 Dong bo du lieu vong #" + token.getTotalRounds() + " den tat ca server...");
+        log("📡 Dong bo du lieu vong #" + roundNum + " den tat ca server...");
 
         allUrls.forEach((id, url) -> {
             if (id.equals(myId)) return;
@@ -463,7 +469,7 @@ public class NodeService {
         if (url == null) return;
 
         try {
-            List<RoundLog> allLogs = roundLogRepository.findAll();
+            List<RoundLog> allLogs = roundLogRepository.findTop200ByOrderByTimestampDesc();
             if (allLogs.isEmpty()) return;
 
             List<Map<String, Object>> entries = new ArrayList<>();
