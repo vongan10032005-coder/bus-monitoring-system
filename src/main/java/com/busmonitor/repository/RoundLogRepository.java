@@ -8,4 +8,5 @@ import java.util.List;
 @Repository
 public interface RoundLogRepository extends JpaRepository<RoundLog, Long> {
     List<RoundLog> findTop10ByOrderByTimestampDesc();
+    boolean existsByRoundNumberAndStationName(int roundNumber, String stationName);
 }

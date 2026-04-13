@@ -2,6 +2,7 @@ package com.busmonitor.model;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 public class BusToken {
     private int currentPassengers;
@@ -10,9 +11,12 @@ public class BusToken {
     private List<String> activeServers;
     private String lastStation;
     private String currentLeader;
+    private int epoch;
+    private List<Map<String, Object>> roundEntries;
 
     public BusToken() {
         this.activeServers = new ArrayList<>();
+        this.roundEntries = new ArrayList<>();
     }
 
     public int getCurrentPassengers() { return currentPassengers; }
@@ -27,4 +31,8 @@ public class BusToken {
     public void setLastStation(String s) { this.lastStation = s; }
     public String getCurrentLeader() { return currentLeader; }
     public void setCurrentLeader(String l) { this.currentLeader = l; }
+    public int getEpoch() { return epoch; }
+    public void setEpoch(int epoch) { this.epoch = epoch; }
+    public List<Map<String, Object>> getRoundEntries() { return roundEntries; }
+    public void setRoundEntries(List<Map<String, Object>> roundEntries) { this.roundEntries = roundEntries; }
 }

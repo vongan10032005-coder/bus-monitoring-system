@@ -24,6 +24,7 @@ public class StationController {
         r.put("server",   node.getMyId());
         r.put("isLeader", node.isLeader());
         r.put("leader",   node.getLeaderId());
+        r.put("epoch",    node.getCurrentEpoch());
         r.put("time",     new Date().toString());
         return ResponseEntity.ok(r);
     }
@@ -50,6 +51,14 @@ public class StationController {
         return ResponseEntity.ok("OK");
     }
 
+    // === DONG BO DU LIEU ===
+
+    @PostMapping("/api/sync-round")
+    public ResponseEntity<String> syncRound(@RequestBody List<Map<String, Object>> entries) {
+        new Thread(() -> node.receiveSyncData(entries)).start();
+        return ResponseEntity.ok("OK");
+    }
+
     @GetMapping("/api/status")
     public ResponseEntity<Map<String, Object>> status() {
         Map<String, Object> d = new LinkedHashMap<>();
@@ -58,6 +67,7 @@ public class StationController {
         d.put("leaderId",    node.getLeaderId());
         d.put("isRunning",   node.isRunning());
         d.put("inTransit",   node.isInTransit());
+        d.put("epoch",       node.getCurrentEpoch());
         d.put("token",       node.getToken());
         d.put("serverStatus",node.getServerStatus());
         d.put("dbLogs",      node.getDbLogs());
@@ -89,6 +99,7 @@ public class StationController {
             + ".pill{font-size:.7rem;padding:3px 10px;border-radius:20px;font-family:'Share Tech Mono',monospace;font-weight:600;}"
             + ".me{background:#00d4ff18;border:1px solid #00d4ff40;color:var(--cy);}"
             + ".ld{background:#ffd24d18;border:1px solid #ffd24d40;color:var(--yw);}"
+            + ".ep{background:#a259ff18;border:1px solid #a259ff40;color:var(--pu);}"
             + ".run{background:#00ff8818;border:1px solid #00ff8840;color:var(--gn);}"
             + ".stp{background:#ff3d5a18;border:1px solid #ff3d5a40;color:var(--rd);}"
             + "@keyframes bk{0%,100%{opacity:1}50%{opacity:.3}}"
@@ -119,7 +130,7 @@ public class StationController {
             + ".lb{background:var(--bg);border:1px solid var(--bd);border-radius:6px;padding:8px 10px;height:190px;overflow-y:auto;font-family:'Share Tech Mono',monospace;font-size:.68rem;line-height:1.75;}"
             + ".lb::-webkit-scrollbar{width:3px;} .lb::-webkit-scrollbar-thumb{background:var(--bd);border-radius:2px;}"
             + ".ll{padding:1px 0;border-bottom:1px solid #ffffff06;}"
-            + ".lok{color:var(--gn);} .ler{color:var(--rd);} .lin{color:var(--cy);} .lwn{color:var(--yw);} .ldm{color:var(--dm);}"
+            + ".lok{color:var(--gn);} .ler{color:var(--rd);} .lin{color:var(--cy);} .lwn{color:var(--yw);} .ldm{color:var(--dm);} .lsn{color:var(--pu);}"
             + ".s2{grid-column:1/3;}"
             + ".tb{width:100%;border-collapse:collapse;font-size:.76rem;}"
             + ".tb th{text-align:left;padding:6px 9px;font-size:.6rem;letter-spacing:1px;text-transform:uppercase;color:var(--dm);border-bottom:1px solid var(--bd);font-weight:600;}"
@@ -140,6 +151,7 @@ public class StationController {
             + "<div class='hrg'>"
             + "<span class='pill me'>TOI: " + myId.toUpperCase() + "</span>"
             + "<span class='pill ld' id='lpill'>LEADER: ...</span>"
+            + "<span class='pill ep' id='epill'>EPOCH: 0</span>"
             + "<span class='pill stp' id='rpill'><span class='dot dof' id='dot'></span><span id='rtxt'>Dang ket noi</span></span>"
             + "</div></div>"
             // MAIN GRID
@@ -175,14 +187,15 @@ public class StationController {
             + "<animate attributeName='opacity' values='1;0.2;1' dur='0.8s' repeatCount='indefinite'/>"
             + "<animate attributeName='r' values='6;9;6' dur='0.8s' repeatCount='indefinite'/>"
             + "</circle>"
-            + "<text id='lring' x='130' y='135' text-anchor='middle' font-size='8' fill='#ffd24d88' font-family='Share Tech Mono'>leader:...</text>"
+            + "<text id='lring' x='130' y='130' text-anchor='middle' font-size='8' fill='#ffd24d88' font-family='Share Tech Mono'>leader:...</text>"
+            + "<text id='ering' x='130' y='142' text-anchor='middle' font-size='7' fill='#a259ff88' font-family='Share Tech Mono'>epoch:0</text>"
             + "</svg></div></div>"
             // Card 3: Server status
             + "<div class='card'><div class='ct'>Trang Thai Server</div><div class='sl2' id='slist'>loading...</div></div>"
             // Card 4: Logs
             + "<div class='card s2'><div class='ct'>Nhat Ky Su Kien</div><div class='lb' id='logb'>Dang ket noi...</div></div>"
-            // Card 5: DB history
-            + "<div class='card'><div class='ct'>Lich Su DB (Tram Nay)</div>"
+            // Card 5: DB history (dong bo)
+            + "<div class='card'><div class='ct'>Lich Su DB (Dong Bo)</div>"
             + "<table class='tb'><thead><tr><th>Vong</th><th>Tram</th><th>Len</th><th>Xuong</th><th>Thu</th></tr></thead>"
             + "<tbody id='hbd'><tr><td colspan='5' style='color:var(--dm);text-align:center'>Dang tai...</td></tr></tbody></table></div>"
             + "</div>"
@@ -192,12 +205,13 @@ public class StationController {
             + "const ST=[{id:'server1-ngan',name:'Ngan',nid:'n1',cx:130,cy:40},{id:'server2-nhi',name:'Nhi',nid:'n2',cx:218,cy:93},{id:'server3-my',name:'My',nid:'n3',cx:187,cy:197},{id:'server4-suong',name:'Suong',nid:'n4',cx:73,cy:197},{id:'server5-hang',name:'Hang',nid:'n5',cx:42,cy:93}];"
             + "function clk(){const n=new Date();document.getElementById('clk').textContent=[n.getHours(),n.getMinutes(),n.getSeconds()].map(x=>x.toString().padStart(2,'0')).join(':');} setInterval(clk,1000);clk();"
             + "function fmt(n){return Number(n||0).toLocaleString('vi-VN');}"
-            + "function lc(l){if(l.includes('hoan thanh')||l.includes('hoi phuc')||l.includes('Khoi dong'))return 'lok';if(l.includes('mat ket noi')||l.includes('that bai')||l.includes('khong the'))return 'ler';if(l.includes('Gui token')||l.includes('Nhan token')||l.includes('Tram'))return 'lin';if(l.includes('LEADER')||l.includes('leader')||l.includes('bau'))return 'lwn';return 'ldm';}"
+            + "function lc(l){if(l.includes('hoan thanh')||l.includes('hoi phuc')||l.includes('Khoi dong'))return 'lok';if(l.includes('mat ket noi')||l.includes('that bai')||l.includes('khong the'))return 'ler';if(l.includes('Gui token')||l.includes('Nhan token')||l.includes('Tram'))return 'lin';if(l.includes('LEADER')||l.includes('leader')||l.includes('bau'))return 'lwn';if(l.includes('Dong bo')||l.includes('dong bo')||l.includes('sync'))return 'lsn';return 'ldm';}"
             + "async function rf(){try{"
             + "const d=await fetch('/api/status').then(r=>r.json());"
-            + "const ss=d.serverStatus||{};const tk=d.token||{};const run=d.isRunning;const ldr=d.leaderId||'?';"
+            + "const ss=d.serverStatus||{};const tk=d.token||{};const run=d.isRunning;const ldr=d.leaderId||'?';const ep=d.epoch||0;"
             // Header
             + "document.getElementById('lpill').textContent='LEADER: '+ldr.toUpperCase();"
+            + "document.getElementById('epill').textContent='EPOCH: '+ep;"
             + "const rp=document.getElementById('rpill'),dot=document.getElementById('dot'),rtxt=document.getElementById('rtxt');"
             + "dot.className='dot '+(run?'don':'dof'); rtxt.textContent=run?'Dang chay':'Da dung'; rp.className='pill '+(run?'run':'stp');"
             // Stats
@@ -206,13 +220,14 @@ public class StationController {
             + "document.getElementById('rev').textContent=fmt(tk.totalRevenue)+'d';"
             + "const ac=Object.values(ss).filter(Boolean).length; document.getElementById('act').textContent=ac+'/5';"
             // Token path
-            + "document.getElementById('tp').innerHTML=ST.map((s,i)=>{const ok=ss[s.id]===true;const cur=s.id===tk.lastStation;const me=s.id===MY;const cls=cur?'ts tcur':(me?'ts tme':(ok?'ts':'ts tdead'));return '<span class=\"'+cls+'\">'+s.name+(me?' *':'')+(cur?' <':'')+'</span>'+(i<4?'<span class=\"sp\">-></span>':'<span class=\"sp\"><-</span>');}).join('');"
+            + "document.getElementById('tp').innerHTML=ST.map((s,i)=>{const ok=ss[s.id]===true;const cur=s.id===tk.lastStation;const me=s.id===MY;const cls=cur?'ts tcur':(me?'ts tme':(ok?'ts':'ts tdead'));return '<span class=\"'+cls+'\">'+s.name+(me?' *':'')+(cur?' <':'')+' </span>'+(i<4?'<span class=\"sp\">-></span>':'<span class=\"sp\"><-</span>');}).join('');"
             // Ring
             + "ST.forEach(s=>{const g=document.getElementById(s.nid);if(!g)return;const c=g.querySelector('circle');const ok=ss[s.id]===true;const me=s.id===MY;const isLd=s.id===ldr;c.setAttribute('stroke',me?'#ffd24d':(isLd?'#ffd24d':(ok?'#00ff88':'#ff3d5a')));c.setAttribute('stroke-width',(me||isLd)?'3':'1.5');g.style.opacity=ok||me?'1':'0.3';});"
             + "const cur=ST.find(s=>s.id===tk.lastStation)||ST[0];document.getElementById('tdot').setAttribute('cx',cur.cx);document.getElementById('tdot').setAttribute('cy',cur.cy);"
             + "document.getElementById('lring').textContent='leader: '+ldr;"
+            + "document.getElementById('ering').textContent='epoch: '+ep;"
             // Server list
-            + "document.getElementById('slist').innerHTML=ST.map((s,i)=>{const ok=ss[s.id]===true;const me=s.id===MY;const isLd=s.id===ldr;const cls='sr '+(me?'sme':(isLd?'sld':(ok?'sok':'ser')));return '<div class=\"'+cls+'\"><span class=\"sn\">'+s.name+(me?' (toi)':'')+'</span><span class=\"bgs\">'+(isLd?'<span class=\"bg bld\">LEADER</span>':'')+(me?'<span class=\"bg bme\">TOI</span>':'')+'<span class=\"bg '+(ok||me?'bok':'ber')+'\">'+(ok||me?'ACTIVE':'LOI')+'</span><span class=\"bg bdb\">DB</span></span></div>';}).join('');"
+            + "document.getElementById('slist').innerHTML=ST.map((s,i)=>{const ok=ss[s.id]===true;const me=s.id===MY;const isLd=s.id===ldr;const cls='sr '+(me?'sme':(isLd?'sld':(ok?'sok':'ser')));return '<div class=\"'+cls+'\"><span class=\"sn\">'+s.name+(me?' (toi)':'')+' </span><span class=\"bgs\">'+(isLd?'<span class=\"bg bld\">LEADER</span>':'')+(me?'<span class=\"bg bme\">TOI</span>':'')+' <span class=\"bg '+(ok||me?'bok':'ber')+'\">'+(ok||me?'ACTIVE':'LOI')+' </span><span class=\"bg bdb\">DB</span><span class=\"bg bdb\">SYNC</span></span></div>';}).join('');"
             // Logs
             + "const logs=d.logs||[]; document.getElementById('logb').innerHTML=logs.slice(-80).reverse().map(l=>'<div class=\"ll '+lc(l)+'\">'+l+'</div>').join('');"
             // DB History
