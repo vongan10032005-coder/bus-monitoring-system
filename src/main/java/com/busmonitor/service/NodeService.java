@@ -364,7 +364,9 @@ public class NodeService {
             attempts++;
             String next = null;
 
-            if (fromId.equals(leaderId)) {
+            String intrinsicLeader = token.getCurrentLeader();
+
+            if (fromId.equals(intrinsicLeader)) {
                 // Leader vua xu ly -> gui den peer dau tien
                 next = active.isEmpty() ? null : active.get(0);
             } else {
@@ -400,27 +402,26 @@ public class NodeService {
         returnTokenToLeader();
     }
 
-    /**
-     * Tra token ve cho leader.
-     * Neu chinh minh la leader -> xu ly truc tiep (khong can HTTP).
-     */
     private void returnTokenToLeader() {
-        if (myId.equals(leaderId)) {
-            // Toi la leader, xu ly truc tiep
+        String tokenLeader = token.getCurrentLeader();
+        if (tokenLeader == null) tokenLeader = leaderId; // Fallback an toan
+
+        if (myId.equals(tokenLeader)) {
+            // Toi la leader cua token nay, xu ly truc tiep
             receiveTokenBack(token);
             return;
         }
 
-        String leaderUrl = allUrls.get(leaderId);
+        String leaderUrl = allUrls.get(tokenLeader);
         if (leaderUrl == null) {
-            log("❌ Khong tim thay URL cua leader!");
+            log("❌ Khong tim thay URL cua leader tao token: " + tokenLeader);
             return;
         }
         try {
-            log("📤 Tra token ve leader: " + leaderId);
+            log("📤 Tra token ve leader: " + tokenLeader);
             restTemplate.postForObject(leaderUrl + "/api/receive-token-back", token, String.class);
         } catch (Exception e) {
-            log("❌ Khong the lien lac leader " + leaderId + ": " + e.getMessage());
+            log("❌ Khong the lien lac leader " + tokenLeader + ": " + e.getMessage());
             log("⚠️ Token co the bi mat! Leader moi se tao token phuc hoi tu dong.");
         }
     }
