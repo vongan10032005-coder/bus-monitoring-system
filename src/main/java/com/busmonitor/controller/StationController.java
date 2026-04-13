@@ -242,7 +242,7 @@ public class StationController {
             // DB History
             + "const h=d.dbLogs||[]; document.getElementById('hbd').innerHTML=h.length?h.map(x=>'<tr><td class=\"c\">'+x.roundNumber+'</td><td style=\"font-size:.72rem\">'+(x.stationName||'')+'</td><td class=\"g\">+'+x.passengersBoarded+'</td><td class=\"r\">-'+x.passengersAlighted+'</td><td class=\"y\">'+fmt(x.revenue)+'</td></tr>').join(''):'<tr><td colspan=\"5\" style=\"color:var(--dm);text-align:center\">Chua co du lieu</td></tr>';"
             + "}catch(e){document.getElementById('rtxt').textContent='Mat ket noi';document.getElementById('dot').className='dot dof';}}"
-            + "rf();setInterval(rf,2000);"
+            + "rf();setInterval(rf,1000);"
             + "</script></body></html>";
     }
 }
