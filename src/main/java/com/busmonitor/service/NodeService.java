@@ -235,7 +235,8 @@ public class NodeService {
         ensureInit();
 
         // Tu choi token tu epoch cu (chong split-brain)
-        if (incoming.getEpoch() < currentEpoch) {
+        // epoch=0 nghia la token di qua server code cu, khong reject
+        if (incoming.getEpoch() > 0 && incoming.getEpoch() < currentEpoch) {
             log("⚠️ Nhan token tu epoch cu (" + incoming.getEpoch() + " < " + currentEpoch + "), bo qua");
             return;
         }
@@ -278,7 +279,8 @@ public class NodeService {
     // Leader nhan token sau khi da di het 1 vong
     public synchronized void receiveTokenBack(BusToken incoming) {
         // Tu choi token tu epoch cu
-        if (incoming.getEpoch() < currentEpoch) {
+        // epoch=0 nghia la token di qua server code cu, khong reject
+        if (incoming.getEpoch() > 0 && incoming.getEpoch() < currentEpoch) {
             log("⚠️ Nhan token-back tu epoch cu (" + incoming.getEpoch() + " < " + currentEpoch + "), bo qua");
             return;
         }
