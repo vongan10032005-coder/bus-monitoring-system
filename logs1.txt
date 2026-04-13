@@ -1,0 +1,20 @@
+[11:21:19] ? Tram 2 - Nhi: +3 len, -0 xuong | 1201 nguoi | 24000 VND
+[11:21:20] ? Gui token den server3-my (https://server3-my.onrender.com)
+[11:21:20] ? Tram 3 - My: +5 len, -4 xuong | 1202 nguoi | 40000 VND
+[11:21:22] ? Gui token den server4-suong (https://server4-suong.onrender.com)
+[11:21:22] ? Tram 4 - Suong: +1 len, -0 xuong | 1203 nguoi | 8000 VND
+[11:21:23] ? Gui token den server5-hang (https://server5-hang.onrender.com)
+[11:21:23] 🏁 Vong #85 hoan thanh! Tong: 16296000 VND
+[11:21:23] 📡 Dong bo vong #85 den tat ca server...
+[11:21:23] ✅ Dong bo thanh cong den server2-nhi
+[11:21:24] ✅ Dong bo thanh cong den server3-my
+[11:21:24] ✅ Dong bo thanh cong den server4-suong
+[11:21:24] ✅ Dong bo thanh cong den server5-hang
+[11:21:26] 🚉 Tram 1 - Ngan [LEADER]: +2 len, -1 xuong | 1202 nguoi | 16000 VND
+[11:21:26] 📋 Active peers: [server2-nhi, server3-my, server4-suong, server5-hang]
+[11:21:28] 📤 Gui token den server2-nhi (https://server2-nhi.onrender.com)
+[11:21:28] ? Tram 2 - Nhi: +2 len, -2 xuong | 1202 nguoi | 16000 VND
+[11:21:30] ? Gui token den server3-my (https://server3-my.onrender.com)
+[11:21:30] ? Tram 3 - My: +3 len, -0 xuong | 1205 nguoi | 24000 VND
+[11:21:31] ? Gui token den server4-suong (https://server4-suong.onrender.com)
+[11:21:31] ? Tram 4 - Suong: +1 len, -2 xuong | 1204 nguoi | 8000 VND

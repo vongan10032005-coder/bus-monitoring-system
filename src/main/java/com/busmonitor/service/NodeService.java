@@ -456,10 +456,16 @@ public class NodeService {
     private void broadcastUiState(BusToken t) {
         if (shuttingDown) return;
         allUrls.forEach((id, url) -> {
-            if (id.equals(myId) || !Boolean.TRUE.equals(peerStatus.get(id))) return;
-            try {
-                restTemplate.postForObject(url + "/api/sync-ui", t, String.class);
-            } catch (Exception ignored) {}
+            if (id.equals(myId)) return; // Force send tap the network even if peerStatus is false
+            boolean success = false;
+            for (int i = 0; i < 3 && !success; i++) {
+                try {
+                    restTemplate.postForObject(url + "/api/sync-ui", t, String.class);
+                    success = true;
+                } catch (Exception ignored) {
+                    try { Thread.sleep(150); } catch (Exception e) {}
+                }
+            }
         });
     }
 
@@ -565,7 +571,7 @@ public class NodeService {
         // Phat thanh nhat ky nay dien toan thieu the gioi
         syncExecutor.submit(() -> {
             allUrls.forEach((id, url) -> {
-                if (id.equals(myId) || !Boolean.TRUE.equals(peerStatus.get(id))) return;
+                if (id.equals(myId)) return; // Force send
                 try {
                     restTemplate.postForObject(url + "/api/sync-log", entry, String.class);
                 } catch (Exception ignored) {}

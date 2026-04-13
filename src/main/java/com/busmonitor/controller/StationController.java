@@ -226,8 +226,14 @@ public class StationController {
             // Token path
             + "document.getElementById('tp').innerHTML=ST.map((s,i)=>{const ok=ss[s.id]===true;const cur=s.id===tk.lastStation;const me=s.id===MY;const cls=cur?'ts tcur':(me?'ts tme':(ok?'ts':'ts tdead'));return '<span class=\"'+cls+'\">'+s.name+(me?' *':'')+(cur?' <':'')+'</span>'+(i<4?'<span class=\"sp\">-></span>':'<span class=\"sp\"><-</span>');}).join('');"
             // Ring
-            + "ST.forEach(s=>{const g=document.getElementById(s.nid);if(!g)return;const c=g.querySelector('circle');const ok=ss[s.id]===true;const me=s.id===MY;const isLd=s.id===ldr;c.setAttribute('stroke',me?'#ffd24d':(isLd?'#ffd24d':(ok?'#00ff88':'#ff3d5a')));c.setAttribute('stroke-width',(me||isLd)?'3':'1.5');g.style.opacity=ok||me?'1':'0.3';});"
-            + "const cur=ST.find(s=>s.id===tk.lastStation)||ST[0];document.getElementById('tdot').setAttribute('cx',cur.cx);document.getElementById('tdot').setAttribute('cy',cur.cy);"
+            + "let activeNodes=ST.filter(s=>ss[s.id]===true||s.id===MY); let nA=activeNodes.length;"
+            + "ST.forEach((s)=>{const g=document.getElementById(s.nid);if(!g)return;const ok=ss[s.id]===true||s.id===MY;"
+            + "if(!ok){g.style.display='none';return;}g.style.display='';g.style.opacity='1';"
+            + "let idx=activeNodes.indexOf(s);let angle=-Math.PI/2+(2*Math.PI*idx)/nA; s.cx=130+90*Math.cos(angle);s.cy=130+90*Math.sin(angle);"
+            + "const c=g.querySelector('circle');c.setAttribute('cx',s.cx);c.setAttribute('cy',s.cy);"
+            + "const me=s.id===MY;const isLd=s.id===ldr;c.setAttribute('stroke',me?'#ffd24d':(isLd?'#ffd24d':'#00ff88'));c.setAttribute('stroke-width',(me||isLd)?'3':'1.5');"
+            + "const tx=g.querySelectorAll('text');tx[0].setAttribute('x',s.cx);tx[0].setAttribute('y',s.cy-4);tx[1].setAttribute('x',s.cx);tx[1].setAttribute('y',s.cy+7);});"
+            + "const cur=ST.find(s=>s.id===tk.lastStation)||activeNodes[0]||ST[0]; document.getElementById('tdot').setAttribute('cx',cur.cx);document.getElementById('tdot').setAttribute('cy',cur.cy);"
             + "document.getElementById('lring').textContent='leader: '+ldr;"
             // Server list
             + "document.getElementById('slist').innerHTML=ST.map((s,i)=>{const ok=ss[s.id]===true;const me=s.id===MY;const isLd=s.id===ldr;const cls='sr '+(me?'sme':(isLd?'sld':(ok?'sok':'ser')));return '<div class=\"'+cls+'\"><span class=\"sn\">'+s.name+(me?' (toi)':'')+'</span><span class=\"bgs\">'+(isLd?'<span class=\"bg bld\">LEADER</span>':'')+(me?'<span class=\"bg bme\">TOI</span>':'')+'<span class=\"bg '+(ok||me?'bok':'ber')+'\">'+(ok||me?'ACTIVE':'LOI')+'</span><span class=\"bg bdb\">DB</span></span></div>';}).join('');"
