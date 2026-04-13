@@ -269,9 +269,15 @@ public class TokenService {
     public String getMyId() { ensureInit(); return myId; }
     public Map<String, Boolean> getServerStatus() {
         ensureInit();
-        Map<String, Boolean> s = new LinkedHashMap<>(serverStatus);
-        s.put(myId, true);
-        return s;
+        Map<String, Boolean> full = new LinkedHashMap<>();
+        allUrls.forEach((id, url) -> {
+            if (id.equals(myId)) {
+                full.put(id, true);
+            } else {
+                full.put(id, serverStatus.getOrDefault(id, false));
+            }
+        });
+        return full;
     }
     public List<String> getLogs() { return new ArrayList<>(logs); }
     public List<RoundLog> getRecentLogs() { return roundLogRepository.findTop10ByOrderByTimestampDesc(); }

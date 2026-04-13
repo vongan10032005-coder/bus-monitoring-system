@@ -207,13 +207,13 @@ public class StationController {
             + "const ac=Object.values(ss).filter(Boolean).length;"
             + "document.getElementById('act').textContent=ac+'/5';"
             // Token path
-            + "document.getElementById('tpath').innerHTML=ST.map((s,i)=>{const ok=ss[s.id]!==false;const cur=s.id===tk.lastStation;const me=s.id===MY;const cls=cur?'cur':(me?'me':(ok?'':'dead'));return '<span class=\"ts '+cls+'\">'+s.name+(me?' *':'')+' '+(cur?'<-':'')+' </span>'+(i<4?'<span class=\"sp\">-&gt;</span>':'<span class=\"sp\">&lt;-</span>');}).join('');"
+            + "document.getElementById('tpath').innerHTML=ST.map((s,i)=>{const ok=ss[s.id]===true;const cur=s.id===tk.lastStation;const me=s.id===MY;const cls=cur?'cur':(me?'me':(ok?'':'dead'));return '<span class=\"ts '+cls+'\">'+s.name+(me?' *':'')+' '+(cur?'<-':'')+' </span>'+(i<4?'<span class=\"sp\">-&gt;</span>':'<span class=\"sp\">&lt;-</span>');}).join('');"
             // Ring
-            + "ST.forEach(s=>{const g=document.getElementById(s.nid);if(!g)return;const c=g.querySelector('circle');const ok=ss[s.id]!==false;const me=s.id===MY;const isLdrNode=s.id===ldr;c.setAttribute('stroke',me?'#ffd24d':(isLdrNode?'#ffd24d':(ok?'#00ff88':'#ff3d5a')));c.setAttribute('stroke-width',me||isLdrNode?'3':'1.5');g.style.opacity=ok?'1':'0.3';});"
+            + "ST.forEach(s=>{const g=document.getElementById(s.nid);if(!g)return;const c=g.querySelector('circle');const me=s.id===MY;const ok=me||ss[s.id]===true;const isLdrNode=s.id===ldr;c.setAttribute('stroke',me?'#ffd24d':(isLdrNode?'#ffd24d':(ok?'#00ff88':'#ff3d5a')));c.setAttribute('stroke-width',me||isLdrNode?'3':'1.5');g.style.opacity=ok?'1':'0.3';});"
             + "const cur=ST.find(s=>s.id===tk.lastStation)||ST[0];document.getElementById('tdot').setAttribute('cx',cur.cx);document.getElementById('tdot').setAttribute('cy',cur.cy);"
             + "document.getElementById('ldr-ring').textContent='leader: '+ldr.replace('server','s');"
             // Server list
-            + "document.getElementById('slist').innerHTML=ST.map((s,i)=>{const ok=ss[s.id]!==false;const me=s.id===MY;const isLd=s.id===ldr;return '<div class=\"sr '+(me?'me':(isLd?'ldr':(ok?'ok':'er')))+'\"><span class=\"sn\">'+s.name+(me?' (toi)':'')+'</span><span class=\"bgs\">'+(isLd?'<span class=\"bg ld\">LEADER</span>':'')+(me?'<span class=\"bg me\">TOI</span>':'')+'<span class=\"bg '+(ok?'ok':'er')+'\">'+(ok?'ACTIVE':'LOI')+'</span><span class=\"bg db\">DB</span></span></div>';}).join('');"
+            + "document.getElementById('slist').innerHTML=ST.map((s,i)=>{const me=s.id===MY;const ok=me||ss[s.id]===true;const isLd=s.id===ldr;return '<div class=\"sr '+(me?'me':(isLd?'ldr':(ok?'ok':'er')))+'\"><span class=\"sn\">'+s.name+(me?' (toi)':'')+'</span><span class=\"bgs\">'+(isLd?'<span class=\"bg ld\">LEADER</span>':'')+(me?'<span class=\"bg me\">TOI</span>':'')+'<span class=\"bg '+(ok?'ok':'er')+'\">'+(ok?'ACTIVE':'LOI')+'</span><span class=\"bg db\">DB</span></span></div>';}).join('');"
             // Logs
             + "const logs=d.systemLogs||[];document.getElementById('logb').innerHTML=logs.slice(-60).reverse().map(l=>'<div class=\"ll '+lc(l)+'\">'+l+'</div>').join('');"
             // History
