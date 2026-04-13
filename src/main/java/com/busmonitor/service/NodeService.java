@@ -128,6 +128,11 @@ public class NodeService {
             if (wasAlive  && !alive) log("❌ " + id + " mat ket noi! Loai khoi vong.");
         });
         electLeader();
+
+        // Watchdog: neu la leader, he thong chay, token khong di -> khoi dong lai
+        if (isLeader && isRunning && !inTransit && !shuttingDown) {
+            scheduler.schedule(this::processAsLeader, 2, TimeUnit.SECONDS);
+        }
     }
 
     private void electLeader() {
