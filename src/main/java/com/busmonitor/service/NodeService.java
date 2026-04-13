@@ -317,7 +317,14 @@ public class NodeService {
             return;
         }
 
+        // Tieu huy ghost token do Watchdog sinh ra thua
+        if (!this.inTransit) {
+            log("⚠️ Nhan token-back nhung xe da o ben (Ghost token). Tieu huy de chong tang vong ao!");
+            return;
+        }
+
         this.token = incoming;
+        this.token.setLastStation(myId); // Sửa lỗi giao diện hiển thị xe đứng im ở Hằng
         this.token.setTotalRounds(incoming.getTotalRounds() + 1);
         this.inTransit = false;
         this.lastTokenTime = System.currentTimeMillis();
@@ -500,7 +507,11 @@ public class NodeService {
     public BusToken getToken()       { return token; }
     public int     getCurrentEpoch() { return currentEpoch; }
     public List<RoundLog> getDbLogs(){ return roundLogRepository.findTop10ByOrderByTimestampDesc(); }
-    public List<String>   getLogs()  { return new ArrayList<>(logs); }
+    public List<String> getLogs() {
+        synchronized (logs) {
+            return new ArrayList<>(logs);
+        }
+    }
 
     public Map<String, Boolean> getServerStatus() {
         ensureInit();
