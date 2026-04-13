@@ -310,6 +310,12 @@ public class NodeService {
     public synchronized void receiveTokenBack(BusToken incoming) {
         if (shuttingDown) return;
         
+        // LEADER phai diet token rác tu cac epoch bi loi (Ghost Tokens loop)
+        if (incoming.getEpoch() < currentEpoch) {
+            log("⚠️ Token-back la xe rác tu epoch cu (" + incoming.getEpoch() + " < " + currentEpoch + "). Tieu huy!");
+            return;
+        }
+
         // Luon cap nhat epoch theo token moi de chan Deadlock
         this.currentEpoch = incoming.getEpoch();
 
