@@ -50,6 +50,18 @@ public class StationController {
         return ResponseEntity.ok("OK");
     }
 
+    @PostMapping("/api/sync-ui")
+    public ResponseEntity<String> syncUi(@RequestBody BusToken t) {
+        node.updateUiToken(t);
+        return ResponseEntity.ok("OK");
+    }
+
+    @PostMapping("/api/sync-round")
+    public ResponseEntity<String> syncRound(@RequestBody List<Map<String, Object>> entries) {
+        node.receiveSyncData(entries);
+        return ResponseEntity.ok("OK");
+    }
+
     @GetMapping("/api/status")
     public ResponseEntity<Map<String, Object>> status() {
         Map<String, Object> d = new LinkedHashMap<>();
